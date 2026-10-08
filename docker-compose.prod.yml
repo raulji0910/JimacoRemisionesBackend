@@ -1,0 +1,42 @@
+# Complemento de producción — usar junto con docker-compose.yml:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# A diferencia de Jimaco Cotizaciones (que trae su propio Caddy), este stack NO levanta un
+# reverse proxy propio: el servidor Lightsail ya tiene uno corriendo para Jimaco
+# (jimaco-caddy) escuchando 80/443. Este proyecto se une a la misma red externa
+# donde vive ese Caddy (jimacocotizaciones_default) para que pueda alcanzar a
+# `jimaco-remisiones-web` por nombre de contenedor — el bloque de enrutamiento se
+# agrega aparte al Caddyfile de Jimaco (ver reference_jimaco_lightsail_ssh en
+# memoria). Ningún servicio expone puertos al host: solo son alcanzables por la
+# red compartida.
+#
+# IMPORTANTE: los nombres de servicio (jimaco-remisiones-db/api/web) son intencionalmente
+# únicos y NO genéricos ("db"/"api"/"web") — Docker Compose registra el nombre del
+# servicio como alias DNS automático en cualquier red a la que se una, y no hay forma
+# de suprimirlo. Si dos proyectos en la misma red compartida usan el mismo nombre de
+# servicio genérico, el alias queda ambiguo (DNS round-robin entre ambos contenedores)
+# y el tráfico de uno puede terminar sirviéndose por el otro — pasó en la práctica al
+# desplegar esto la primera vez (el alias "api" resolvía a veces a Jimaco, a veces a
+# otro proyecto). No renombrar estos servicios a algo genérico.
+services:
+  jimaco-remisiones-api:
+    environment:
+      Cors__AllowedOrigins__0: https://remisiones.jimaco.com.co
+    ports: []
+    networks:
+      - default
+
+  jimaco-remisiones-web:
+    ports: []
+    networks:
+      - default
+
+  jimaco-remisiones-db:
+    ports: []
+    networks:
+      - default
+
+networks:
+  default:
+    external: true
+    name: jimacocotizaciones_default

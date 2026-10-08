@@ -1,0 +1,435 @@
+using System.Globalization;
+using System.Net;
+using System.Text.RegularExpressions;
+using Jimaco.Remisiones.Modelo;
+using Jimaco.Remisiones.Modelo.Entidades;
+using Jimaco.Remisiones.Negocio.DTOs;
+using Jimaco.Remisiones.Negocio.Interfaces;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace Jimaco.Remisiones.Negocio.Servicios;
+
+public partial class RemisionService(
+    AppDbContext db,
+    IRemisionPdfBuilder pdfBuilder,
+    IEmailSender emailSender,
+    TimeProvider timeProvider,
+    ILogger<RemisionService> logger) : IRemisionService
+{
+    // Reconoce el consecutivo formateado ("RM-00173"), con o sin prefijo y ceros a la izquierda,
+    // para que buscar por el número que ve el comprador también funcione.
+    [GeneratedRegex(@"^(?:rm-?)?0*(\d+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex RegexConsecutivoBuscado();
+
+    private static readonly CultureInfo CulturaCo = CultureInfo.GetCultureInfo("es-CO");
+
+    public async Task<PaginaResultado<RemisionResumenDto>> BuscarAsync(EstadoPago? estadoPago, bool soloEnviosPendientes, string? texto, int pagina, int tamanoPagina, CancellationToken ct = default)
+    {
+        pagina = Math.Max(1, pagina);
+        tamanoPagina = Math.Clamp(tamanoPagina, 1, 100);
+
+        var query = db.Remisiones.AsQueryable();
+
+        if (estadoPago is not null)
+            query = query.Where(r => r.EstadoPago == estadoPago);
+
+        // Bandeja de logística: ya pagadas, de envío, que todavía no se han entregado.
+        if (soloEnviosPendientes)
+            query = query.Where(r => r.EstadoPago == EstadoPago.Pagada
+                && r.TipoEntrega == TipoEntrega.Envio
+                && r.EstadoEntrega == EstadoEntrega.Pendiente);
+
+        if (!string.IsNullOrWhiteSpace(texto))
+        {
+            var textoTrim = texto.Trim();
+            var patron = $"%{textoTrim}%";
+
+            int? consecutivoBuscado = null;
+            var match = RegexConsecutivoBuscado().Match(textoTrim.Replace(" ", ""));
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var parsed))
+                consecutivoBuscado = parsed;
+
+            query = query.Where(r =>
+                EF.Functions.Like(r.CompradorNombreSnapshot, patron) ||
+                EF.Functions.Like(r.CompradorDocumentoSnapshot, patron) ||
+                (consecutivoBuscado != null && r.Consecutivo == consecutivoBuscado));
+        }
+
+        query = query.OrderByDescending(r => r.Consecutivo);
+
+        var total = await query.CountAsync(ct);
+
+        var filas = await query
+            .Skip((pagina - 1) * tamanoPagina)
+            .Take(tamanoPagina)
+            .Select(r => new
+            {
+                r.Id,
+                r.Consecutivo,
+                r.CompradorNombreSnapshot,
+                r.CompradorDocumentoSnapshot,
+                r.FechaCreacion,
+                r.Descuento,
+                r.EstadoPago,
+                r.TipoEntrega,
+                r.EstadoEntrega,
+                r.CorreoEnviadoEn,
+                r.SincronizacionWo,
+                Items = r.Items.Select(i => new { i.PrecioUnitario, i.Cantidad, i.Iva }).ToList()
+            })
+            .ToListAsync(ct);
+
+        // El total (con IVA y descuento prorrateado) se calcula en memoria con la misma función
+        // que usa el detalle, para que lista y detalle nunca difieran.
+        var items = filas.Select(f =>
+        {
+            var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), f.Descuento);
+            return new RemisionResumenDto(
+                f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
+                f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.TipoEntrega, f.EstadoEntrega,
+                f.CorreoEnviadoEn is not null, f.SincronizacionWo);
+        }).ToList();
+
+        return new PaginaResultado<RemisionResumenDto>(items, total, pagina, tamanoPagina);
+    }
+
+    public async Task<RemisionDetalleDto?> ObtenerPorIdAsync(int id, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        return remision is null ? null : MapDetalle(remision);
+    }
+
+    public async Task<RemisionDetalleDto> CrearAsync(RemisionGuardarDto dto, string? usuario, CancellationToken ct = default)
+    {
+        var comprador = await ObtenerCompradorActivoAsync(dto.CompradorId, ct);
+        var items = await ConstruirItemsAsync(dto, ct);
+
+        var remision = new Remision
+        {
+            Consecutivo = await ObtenerSiguienteConsecutivoAsync(ct),
+            CompradorId = comprador.Id,
+            CompradorTipoDocumentoSnapshot = comprador.TipoDocumento,
+            CompradorDocumentoSnapshot = comprador.NumeroDocumento,
+            CompradorNombreSnapshot = comprador.NombreCompleto,
+            CompradorDireccionSnapshot = comprador.Direccion,
+            CompradorCiudadSnapshot = comprador.Ciudad,
+            CompradorTelefonoSnapshot = comprador.Telefono,
+            CompradorEmailSnapshot = comprador.Email,
+            Descuento = dto.Descuento,
+            Nota = dto.Nota?.Trim(),
+            TipoEntrega = dto.TipoEntrega,
+            FechaCreacion = timeProvider.GetUtcNow().UtcDateTime,
+            CreadoPor = usuario,
+            Items = items
+        };
+
+        db.Remisiones.Add(remision);
+        await db.SaveChangesAsync(ct);
+
+        return MapDetalle(remision);
+    }
+
+    public async Task<RemisionDetalleDto?> ActualizarAsync(int id, RemisionGuardarDto dto, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago != EstadoPago.Pendiente)
+            throw new InvalidOperationException("Solo se puede editar una remisión pendiente de pago.");
+
+        var comprador = await ObtenerCompradorActivoAsync(dto.CompradorId, ct);
+        var items = await ConstruirItemsAsync(dto, ct);
+
+        remision.CompradorId = comprador.Id;
+        remision.CompradorTipoDocumentoSnapshot = comprador.TipoDocumento;
+        remision.CompradorDocumentoSnapshot = comprador.NumeroDocumento;
+        remision.CompradorNombreSnapshot = comprador.NombreCompleto;
+        remision.CompradorDireccionSnapshot = comprador.Direccion;
+        remision.CompradorCiudadSnapshot = comprador.Ciudad;
+        remision.CompradorTelefonoSnapshot = comprador.Telefono;
+        remision.CompradorEmailSnapshot = comprador.Email;
+        remision.Descuento = dto.Descuento;
+        remision.Nota = dto.Nota?.Trim();
+        remision.TipoEntrega = dto.TipoEntrega;
+
+        // Se reemplazan las líneas completas, re-congelando precio/IVA desde el catálogo actual.
+        db.RemisionItems.RemoveRange(remision.Items);
+        remision.Items = items;
+
+        await db.SaveChangesAsync(ct);
+        return MapDetalle(remision);
+    }
+
+    public async Task<PagarResultadoDto?> MarcarPagadaAsync(int id, MarcarPagadaDto dto, string? usuario, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago == EstadoPago.Anulada)
+            throw new InvalidOperationException("La remisión está anulada.");
+        if (remision.EstadoPago == EstadoPago.Pagada)
+            throw new InvalidOperationException("La remisión ya está marcada como pagada.");
+        if (remision.Items.Count == 0)
+            throw new InvalidOperationException("La remisión no tiene ítems.");
+
+        var ahora = timeProvider.GetUtcNow().UtcDateTime;
+        remision.EstadoPago = EstadoPago.Pagada;
+        remision.FechaPago = ahora;
+        remision.PagadaPor = usuario;
+        remision.ReferenciaPago = string.IsNullOrWhiteSpace(dto.ReferenciaPago) ? null : dto.ReferenciaPago.Trim();
+
+        // Entrega en sitio: el producto sale en el momento del cobro. Envío: queda pendiente
+        // hasta que logística lo marque como entregado.
+        if (remision.TipoEntrega == TipoEntrega.EnSitio)
+        {
+            remision.EstadoEntrega = EstadoEntrega.Entregada;
+            remision.FechaEntrega = ahora;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        // El pago ya quedó guardado; un fallo del correo nunca lo revierte.
+        var (enviado, error) = await IntentarEnviarCorreoAsync(remision, ct);
+        return new PagarResultadoDto(MapDetalle(remision), enviado, error);
+    }
+
+    public async Task<EnviarCorreoResultadoDto?> EnviarCorreoAsync(int id, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago != EstadoPago.Pagada)
+            throw new InvalidOperationException("Solo se envía por correo una remisión ya pagada.");
+
+        var (enviado, error) = await IntentarEnviarCorreoAsync(remision, ct);
+        return new EnviarCorreoResultadoDto(MapDetalle(remision), enviado, error);
+    }
+
+    public async Task<RemisionDetalleDto?> CambiarTipoEntregaAsync(int id, CambiarTipoEntregaDto dto, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago == EstadoPago.Anulada)
+            throw new InvalidOperationException("La remisión está anulada.");
+        if (remision.EstadoEntrega == EstadoEntrega.Entregada)
+            throw new InvalidOperationException("La remisión ya fue entregada.");
+
+        remision.TipoEntrega = dto.TipoEntrega;
+
+        // Si ya está pagada y pasa a "en sitio", se entrega en ese momento.
+        if (remision.EstadoPago == EstadoPago.Pagada && dto.TipoEntrega == TipoEntrega.EnSitio)
+        {
+            remision.EstadoEntrega = EstadoEntrega.Entregada;
+            remision.FechaEntrega = timeProvider.GetUtcNow().UtcDateTime;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return MapDetalle(remision);
+    }
+
+    public async Task<RemisionDetalleDto?> MarcarEntregadaAsync(int id, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago != EstadoPago.Pagada)
+            throw new InvalidOperationException("Solo se entrega una remisión ya pagada.");
+        if (remision.EstadoEntrega == EstadoEntrega.Entregada)
+            throw new InvalidOperationException("La remisión ya fue entregada.");
+
+        remision.EstadoEntrega = EstadoEntrega.Entregada;
+        remision.FechaEntrega = timeProvider.GetUtcNow().UtcDateTime;
+
+        await db.SaveChangesAsync(ct);
+        return MapDetalle(remision);
+    }
+
+    public async Task<RemisionDetalleDto?> AnularAsync(int id, AnularRemisionDto dto, bool esAdmin, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(dto.Motivo))
+            throw new InvalidOperationException("El motivo de anulación es obligatorio.");
+        if (remision.EstadoPago == EstadoPago.Anulada)
+            throw new InvalidOperationException("La remisión ya está anulada.");
+        if (remision.EstadoPago == EstadoPago.Pagada && !esAdmin)
+            throw new InvalidOperationException("Solo un administrador puede anular una remisión ya pagada.");
+        // Si el inventario ya se descontó en World Office, anular acá dejaría los dos sistemas
+        // descuadrados: esa reversa se hace allá.
+        if (remision.SincronizacionWo == EstadoSincronizacionWo.Sincronizada)
+            throw new InvalidOperationException("Esta remisión ya descontó inventario en World Office. La devolución debe hacerse allá antes de anularla.");
+
+        remision.EstadoPago = EstadoPago.Anulada;
+        remision.FechaAnulacion = timeProvider.GetUtcNow().UtcDateTime;
+        remision.MotivoAnulacion = dto.Motivo.Trim();
+
+        await db.SaveChangesAsync(ct);
+        return MapDetalle(remision);
+    }
+
+    public async Task<byte[]?> GenerarPdfAsync(int id, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        return remision is null ? null : pdfBuilder.Generar(MapDetalle(remision));
+    }
+
+    // ---------------------------------------------------------------------------------------
+
+    private async Task<(bool Enviado, string? Error)> IntentarEnviarCorreoAsync(Remision remision, CancellationToken ct)
+    {
+        try
+        {
+            var detalle = MapDetalle(remision);
+            var pdf = pdfBuilder.Generar(detalle);
+
+            await emailSender.EnviarAsync(
+                remision.CompradorEmailSnapshot,
+                $"Remisión {detalle.ConsecutivoFormateado} - Jimaco",
+                ConstruirCuerpoCorreo(detalle),
+                [new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf")],
+                ct);
+
+            remision.CorreoEnviadoEn = timeProvider.GetUtcNow().UtcDateTime;
+            await db.SaveChangesAsync(ct);
+            return (true, null);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Errores de configuración con mensaje pensado para el usuario (ej. SMTP sin configurar).
+            logger.LogWarning(ex, "No se pudo enviar el correo de la remisión {Id}", remision.Id);
+            return (false, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Fallo enviando el correo de la remisión {Id}", remision.Id);
+            return (false, "No se pudo enviar el correo. Puedes reintentarlo desde el detalle de la remisión.");
+        }
+    }
+
+    private static string ConstruirCuerpoCorreo(RemisionDetalleDto r)
+    {
+        var nombre = WebUtility.HtmlEncode(r.CompradorNombre);
+        var total = $"$ {r.TotalGeneral.ToString("N0", CulturaCo)}";
+        var entrega = r.TipoEntrega == TipoEntrega.EnSitio
+            ? "Sus productos fueron entregados en el punto de venta."
+            : "Sus productos serán despachados a la dirección indicada; le avisaremos cuando salgan.";
+
+        return $"""
+            <div style="font-family:Arial,Helvetica,sans-serif;color:#333;max-width:560px">
+              <div style="background:#1c6521;color:#fff;padding:14px 18px;font-size:18px;font-weight:bold">JIMACO</div>
+              <div style="padding:18px;border:1px solid #ddd;border-top:0">
+                <p>Hola <strong>{nombre}</strong>,</p>
+                <p>Gracias por su compra. Adjuntamos la remisión <strong>{r.ConsecutivoFormateado}</strong> por un total de <strong>{total}</strong>.</p>
+                <p>{entrega}</p>
+                <p style="color:#777;font-size:12px">Este documento es una remisión de entrega y no reemplaza la factura de venta.</p>
+              </div>
+            </div>
+            """;
+    }
+
+    private async Task<Comprador> ObtenerCompradorActivoAsync(int compradorId, CancellationToken ct)
+    {
+        var comprador = await db.Compradores.FirstOrDefaultAsync(c => c.Id == compradorId, ct);
+        if (comprador is null || !comprador.Activo)
+            throw new InvalidOperationException("El comprador indicado no existe o no está activo.");
+        return comprador;
+    }
+
+    // Valida las líneas y las congela desde el catálogo vigente. Mismo producto repetido se suma.
+    private async Task<List<RemisionItem>> ConstruirItemsAsync(RemisionGuardarDto dto, CancellationToken ct)
+    {
+        if (dto.Items is null || dto.Items.Count == 0)
+            throw new InvalidOperationException("La remisión debe tener al menos un ítem.");
+        if (dto.Items.Any(i => i.Cantidad < 1))
+            throw new InvalidOperationException("La cantidad de cada ítem debe ser mayor a cero.");
+        if (dto.Descuento < 0)
+            throw new InvalidOperationException("El descuento no puede ser negativo.");
+
+        var cantidades = dto.Items
+            .GroupBy(i => i.ProductoId)
+            .ToDictionary(g => g.Key, g => g.Sum(i => i.Cantidad));
+
+        var ids = cantidades.Keys.ToList();
+        var productos = await db.Productos.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+
+        var items = new List<RemisionItem>();
+        foreach (var (productoId, cantidad) in cantidades)
+        {
+            var producto = productos.FirstOrDefault(p => p.Id == productoId)
+                ?? throw new InvalidOperationException($"No existe el producto con id {productoId}.");
+            if (!producto.Activo)
+                throw new InvalidOperationException($"El producto '{producto.Codigo}' está inactivo.");
+
+            items.Add(new RemisionItem
+            {
+                ProductoId = producto.Id,
+                ProductoCodigoSnapshot = producto.Codigo,
+                ProductoNombreSnapshot = producto.Nombre,
+                PrecioUnitario = producto.PrecioVenta,
+                CostoSnapshot = producto.Costo,
+                Iva = producto.Iva,
+                Cantidad = cantidad
+            });
+        }
+
+        var subtotal = items.Sum(i => i.PrecioUnitario * i.Cantidad);
+        if (dto.Descuento > subtotal)
+            throw new InvalidOperationException("El descuento no puede ser mayor al subtotal de la remisión.");
+
+        return items;
+    }
+
+    // SELECT NEXT VALUE FOR no se puede ejecutar vía SqlQuery de EF (lo envuelve en una
+    // subconsulta y SQL Server lo rechaza, error 11719), por eso se usa ADO.NET directo.
+    private async Task<int> ObtenerSiguienteConsecutivoAsync(CancellationToken ct)
+    {
+        var connection = db.Database.GetDbConnection();
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            using var command = connection.CreateCommand();
+            // Nombre literal a propósito: debe coincidir con AppDbContext.SecuenciaConsecutivoRemision.
+            command.CommandText = "SELECT NEXT VALUE FOR dbo.SecuenciaConsecutivoRemision";
+            var resultado = await command.ExecuteScalarAsync(ct);
+            return Convert.ToInt32(resultado);
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static string Formatear(int consecutivo) => $"RM-{consecutivo:D5}";
+
+    private static RemisionDetalleDto MapDetalle(Remision r)
+    {
+        // Orden estable por Id: sin esto SQL Server no garantiza el orden de la colección.
+        var lineas = r.Items.OrderBy(i => i.Id).ToList();
+        var calculo = RemisionCalculos.Calcular(lineas.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), r.Descuento);
+
+        var items = lineas.Select(i => new RemisionItemDto(
+            i.Id, i.ProductoId, i.ProductoCodigoSnapshot, i.ProductoNombreSnapshot, i.PrecioUnitario, i.Iva,
+            i.Cantidad, i.PrecioUnitario * i.Cantidad, i.CostoSnapshot,
+            RemisionCalculos.MargenPorcentaje(i.PrecioUnitario, i.CostoSnapshot))).ToList();
+
+        return new RemisionDetalleDto(
+            r.Id, r.Consecutivo, Formatear(r.Consecutivo), r.CompradorId,
+            r.CompradorTipoDocumentoSnapshot, r.CompradorDocumentoSnapshot, r.CompradorNombreSnapshot,
+            r.CompradorDireccionSnapshot, r.CompradorCiudadSnapshot, r.CompradorTelefonoSnapshot, r.CompradorEmailSnapshot,
+            r.Nota, r.FechaCreacion, r.CreadoPor,
+            r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReferenciaPago,
+            r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
+            r.FechaAnulacion, r.MotivoAnulacion,
+            r.SincronizacionWo, r.DocumentoWorldOffice, r.ErrorSincronizacionWo,
+            items, calculo.SubtotalItems, r.Descuento, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);
+    }
+}
