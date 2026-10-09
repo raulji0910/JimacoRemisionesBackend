@@ -8,7 +8,11 @@ namespace Jimaco.Remisiones.Modelo.Entidades;
 public enum RolUsuario
 {
     Admin = 1,
-    Operador = 2
+    Operador = 2,
+
+    // Usuario de servicio del Sincronizador (agente en la red de World Office). Solo debe usarse
+    // contra /api/sincronizacion/*; no es una persona.
+    Sincronizador = 3
 }
 
 public class Usuario

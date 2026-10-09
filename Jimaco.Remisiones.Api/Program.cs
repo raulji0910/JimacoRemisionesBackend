@@ -21,6 +21,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
 
 builder.Services.AddNegocio();
+builder.Services.Configure<Jimaco.Remisiones.Negocio.Servicios.WorldOfficeOptions>(builder.Configuration.GetSection(Jimaco.Remisiones.Negocio.Servicios.WorldOfficeOptions.SeccionConfiguracion));
 builder.Services.Configure<DatosEmpresaOptions>(builder.Configuration.GetSection(DatosEmpresaOptions.SeccionConfiguracion));
 
 var jwtSecret = builder.Configuration["Jwt:Secret"]

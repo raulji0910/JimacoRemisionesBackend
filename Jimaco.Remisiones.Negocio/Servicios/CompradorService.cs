@@ -10,7 +10,7 @@ namespace Jimaco.Remisiones.Negocio.Servicios;
 public partial class CompradorService(AppDbContext db, TimeProvider timeProvider) : ICompradorService
 {
     // Mismos códigos de tipo de documento que usa World Office para los terceros.
-    private static readonly string[] TiposDocumento = ["CC", "NIT", "CE", "PAS", "TI", "RC", "NUIP", "DIE"];
+    internal static readonly string[] TiposDocumento = ["CC", "NIT", "CE", "PAS", "TI", "RC", "NUIP", "DIE", "TE", "PEP", "PPT", "NITE", "CD", "CN", "AS", "OTRO"];
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
     private static partial Regex RegexEmail();
@@ -116,7 +116,7 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
     }
 
     // Copia los campos editables y recalcula lo derivado (nombre completo, DV).
-    private static void Aplicar(Comprador c, CompradorGuardarDto dto)
+    internal static void Aplicar(Comprador c, CompradorGuardarDto dto)
     {
         c.TipoPersona = dto.TipoPersona;
         c.PrimerNombre = dto.PrimerNombre.Trim();
@@ -166,7 +166,7 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
 
     // Deja solo letras/dígitos en mayúscula. Si viene con DV ("900.632.353-1"), se descarta lo que
     // sigue al guion: el DV no vive en este campo, se calcula aparte (DigitoVerificacion).
-    private static string NormalizarDocumento(string? numero)
+    internal static string NormalizarDocumento(string? numero)
     {
         var texto = (numero ?? "").Trim();
         var guion = texto.IndexOf('-');

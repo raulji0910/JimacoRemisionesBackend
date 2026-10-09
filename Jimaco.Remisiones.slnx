@@ -2,5 +2,6 @@
   <Project Path="Jimaco.Remisiones.Api/Jimaco.Remisiones.Api.csproj" />
   <Project Path="Jimaco.Remisiones.Modelo/Jimaco.Remisiones.Modelo.csproj" />
   <Project Path="Jimaco.Remisiones.Negocio/Jimaco.Remisiones.Negocio.csproj" />
+  <Project Path="Jimaco.Remisiones.Sincronizador/Jimaco.Remisiones.Sincronizador.csproj" />
   <Project Path="Jimaco.Remisiones.TestUnitarios/Jimaco.Remisiones.TestUnitarios.csproj" />
 </Solution>

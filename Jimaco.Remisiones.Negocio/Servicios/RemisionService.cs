@@ -341,6 +341,9 @@ public partial class RemisionService(
         var comprador = await db.Compradores.FirstOrDefaultAsync(c => c.Id == compradorId, ct);
         if (comprador is null || !comprador.Activo)
             throw new InvalidOperationException("El comprador indicado no existe o no está activo.");
+        // Los compradores traídos de World Office pueden no tener correo; sin él no hay a dónde enviar la remisión.
+        if (string.IsNullOrWhiteSpace(comprador.Email))
+            throw new InvalidOperationException("El comprador no tiene correo electrónico. Edítalo y agrégalo: ahí se envía la remisión.");
         return comprador;
     }
 
@@ -368,6 +371,9 @@ public partial class RemisionService(
                 ?? throw new InvalidOperationException($"No existe el producto con id {productoId}.");
             if (!producto.Activo)
                 throw new InvalidOperationException($"El producto '{producto.Codigo}' está inactivo.");
+            // Los productos nuevos de World Office nacen sin precio (WO no lo guarda en el catálogo).
+            if (producto.PrecioVenta <= 0)
+                throw new InvalidOperationException($"El producto '{producto.Codigo}' no tiene precio de venta. Asígnalo en Productos antes de venderlo.");
 
             items.Add(new RemisionItem
             {

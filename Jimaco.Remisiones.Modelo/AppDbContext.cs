@@ -10,6 +10,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Comprador> Compradores => Set<Comprador>();
     public DbSet<Remision> Remisiones => Set<Remision>();
     public DbSet<RemisionItem> RemisionItems => Set<RemisionItem>();
+    public DbSet<ProductoExistencia> ProductoExistencias => Set<ProductoExistencia>();
 
     // Consumida vía "SELECT NEXT VALUE FOR dbo.SecuenciaConsecutivoRemision" para asignar el
     // número oficial de la remisión de forma atómica ante concurrencia.
@@ -20,6 +21,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Producto>(e =>
         {
             e.HasIndex(p => p.Codigo).IsUnique();
+            e.HasIndex(p => p.IdWorldOffice).IsUnique().HasFilter("[IdWorldOffice] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<ProductoExistencia>(e =>
+        {
+            e.HasOne(x => x.Producto)
+                .WithMany(p => p.Existencias)
+                .HasForeignKey(x => x.ProductoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasIndex(x => new { x.ProductoId, x.Bodega }).IsUnique();
         });
 
         modelBuilder.Entity<Usuario>(e =>
@@ -32,6 +44,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // El mismo número de documento no se repite: es la llave para autocompletar al volver.
             e.HasIndex(c => c.NumeroDocumento).IsUnique();
             e.HasIndex(c => c.NombreCompleto);
+            e.HasIndex(c => c.CodigoWorldOffice);
         });
 
         modelBuilder.Entity<Remision>(e =>

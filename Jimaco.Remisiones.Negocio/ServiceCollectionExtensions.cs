@@ -12,6 +12,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IProductoService, ProductoService>();
         services.AddScoped<ICompradorService, CompradorService>();
         services.AddScoped<IRemisionService, RemisionService>();
+        services.AddScoped<ISincronizacionService, SincronizacionService>();
         services.AddScoped<IJwtGenerador, JwtGenerador>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IUsuarioService, UsuarioService>();

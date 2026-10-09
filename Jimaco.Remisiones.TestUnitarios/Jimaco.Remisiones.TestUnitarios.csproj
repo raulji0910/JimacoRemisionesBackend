@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Jimaco.Remisiones.Negocio\Jimaco.Remisiones.Negocio.csproj" />
     <ProjectReference Include="..\Jimaco.Remisiones.Modelo\Jimaco.Remisiones.Modelo.csproj" />
+    <ProjectReference Include="..\Jimaco.Remisiones.Sincronizador\Jimaco.Remisiones.Sincronizador.csproj" />
   </ItemGroup>
 
 </Project>

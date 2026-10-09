@@ -3,12 +3,30 @@ using Jimaco.Remisiones.Modelo.Entidades;
 using Jimaco.Remisiones.Negocio.DTOs;
 using Jimaco.Remisiones.Negocio.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Jimaco.Remisiones.Negocio.Servicios;
 
-public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProductoService
+public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOptions<WorldOfficeOptions> woOptions) : IProductoService
 {
     private static readonly int[] TarifasIva = [0, 5, 19];
+
+    private string BodegaVenta => woOptions.Value.BodegaVenta;
+
+    // Una sola proyección para lista y detalle: incluye la existencia en la bodega de venta.
+    private IQueryable<ProductoDto> Proyectar(IQueryable<Producto> query)
+    {
+        var bodega = BodegaVenta;
+        return query.Select(p => new ProductoDto(
+            p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Origen, p.Activo,
+            p.IdWorldOffice,
+            // Sin sincronizar nunca => null ("sin dato"), no 0. Ya sincronizado y sin filas en esta
+            // bodega => 0 (WO solo tiene filas donde hubo movimientos).
+            p.ExistenciaActualizadaEn == null
+                ? (decimal?)null
+                : (p.Existencias.Where(e => e.Bodega == bodega).Sum(e => (decimal?)e.Cantidad) ?? 0m),
+            p.ExistenciaActualizadaEn));
+    }
 
     public async Task<PaginaResultado<ProductoDto>> BuscarAsync(string? texto, bool soloActivos, int pagina, int tamanoPagina, CancellationToken ct = default)
     {
@@ -29,22 +47,13 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProd
         query = query.OrderBy(p => p.Nombre);
 
         var total = await query.CountAsync(ct);
-        var items = await query
-            .Skip((pagina - 1) * tamanoPagina)
-            .Take(tamanoPagina)
-            .Select(p => new ProductoDto(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Origen, p.Activo))
-            .ToListAsync(ct);
+        var items = await Proyectar(query.Skip((pagina - 1) * tamanoPagina).Take(tamanoPagina)).ToListAsync(ct);
 
         return new PaginaResultado<ProductoDto>(items, total, pagina, tamanoPagina);
     }
 
     public async Task<ProductoDto?> ObtenerPorIdAsync(int id, CancellationToken ct = default)
-    {
-        return await db.Productos
-            .Where(p => p.Id == id)
-            .Select(p => new ProductoDto(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Origen, p.Activo))
-            .FirstOrDefaultAsync(ct);
-    }
+        => await Proyectar(db.Productos.Where(p => p.Id == id)).FirstOrDefaultAsync(ct);
 
     public async Task<ProductoDto> CrearAsync(ProductoCrearDto dto, CancellationToken ct = default)
     {
@@ -70,7 +79,7 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProd
         db.Productos.Add(producto);
         await db.SaveChangesAsync(ct);
 
-        return Map(producto);
+        return (await ObtenerPorIdAsync(producto.Id, ct))!;
     }
 
     public async Task<ProductoDto?> ActualizarAsync(int id, ProductoActualizarDto dto, CancellationToken ct = default)
@@ -99,7 +108,7 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProd
         producto.Activo = dto.Activo;
 
         await db.SaveChangesAsync(ct);
-        return Map(producto);
+        return await ObtenerPorIdAsync(id, ct);
     }
 
     public async Task<bool> EliminarAsync(int id, CancellationToken ct = default)
@@ -131,8 +140,5 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProd
     }
 
     // Mayúsculas y sin espacios en los extremos: el código es llave de cruce con World Office.
-    private static string NormalizarCodigo(string codigo) => (codigo ?? "").Trim().ToUpperInvariant();
-
-    private static ProductoDto Map(Producto p)
-        => new(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Origen, p.Activo);
+    internal static string NormalizarCodigo(string codigo) => (codigo ?? "").Trim().ToUpperInvariant();
 }

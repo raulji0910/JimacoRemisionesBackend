@@ -35,4 +35,12 @@ public class Producto
     public bool Activo { get; set; } = true;
 
     public DateTime FechaCreacion { get; set; }
+
+    // IdInventario en World Office, cuando el producto viene de allá (Sincronizador).
+    public int? IdWorldOffice { get; set; }
+
+    // Última vez que el Sincronizador actualizó las existencias de este producto.
+    public DateTime? ExistenciaActualizadaEn { get; set; }
+
+    public ICollection<ProductoExistencia> Existencias { get; set; } = new List<ProductoExistencia>();
 }

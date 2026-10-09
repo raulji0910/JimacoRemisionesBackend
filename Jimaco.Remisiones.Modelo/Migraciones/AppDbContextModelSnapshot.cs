@@ -103,6 +103,8 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CodigoWorldOffice");
+
                     b.HasIndex("NombreCompleto");
 
                     b.HasIndex("NumeroDocumento")
@@ -130,8 +132,14 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<decimal?>("Costo")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<DateTime?>("ExistenciaActualizadaEn")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime>("FechaCreacion")
                         .HasColumnType("datetime2");
+
+                    b.Property<int?>("IdWorldOffice")
+                        .HasColumnType("int");
 
                     b.Property<int>("Iva")
                         .HasColumnType("int");
@@ -156,7 +164,38 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.HasIndex("Codigo")
                         .IsUnique();
 
+                    b.HasIndex("IdWorldOffice")
+                        .IsUnique()
+                        .HasFilter("[IdWorldOffice] IS NOT NULL");
+
                     b.ToTable("Productos");
+                });
+
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.ProductoExistencia", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Bodega")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<decimal>("Cantidad")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("ProductoId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductoId", "Bodega")
+                        .IsUnique();
+
+                    b.ToTable("ProductoExistencias");
                 });
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Remision", b =>
@@ -365,6 +404,17 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.ToTable("Usuarios");
                 });
 
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.ProductoExistencia", b =>
+                {
+                    b.HasOne("Jimaco.Remisiones.Modelo.Entidades.Producto", "Producto")
+                        .WithMany("Existencias")
+                        .HasForeignKey("ProductoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Producto");
+                });
+
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Remision", b =>
                 {
                     b.HasOne("Jimaco.Remisiones.Modelo.Entidades.Comprador", "Comprador")
@@ -385,6 +435,11 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .IsRequired();
 
                     b.Navigation("Remision");
+                });
+
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Producto", b =>
+                {
+                    b.Navigation("Existencias");
                 });
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Remision", b =>
