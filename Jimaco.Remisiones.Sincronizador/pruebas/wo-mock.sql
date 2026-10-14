@@ -24,6 +24,7 @@ CREATE TABLE dbo.Inventarios (
     UnidadDeMedida nvarchar(30) NOT NULL,
     Iva numeric(13,6) NULL,
     Activo smallint NOT NULL,
+    IdInventarioClase int NULL,
     VersionCol rowversion
 );
 
@@ -124,13 +125,17 @@ GO
 -- ===== Datos =====
 INSERT dbo.[Inventarios - Bodegas] VALUES (N'Uno', N'Principal'), (N'Dos', N'Secundaria');
 
-INSERT dbo.Inventarios ([CódigoInventario], [Descripción], UnidadDeMedida, Iva, Activo) VALUES
- (N'PJ-4137',  N'PINTURA ESMALTE AMARILLO X GALON',        N'gal',  0.19, -1),
- (N'PJ-28211', N'MOSQUETON ACERO 50 KN DOBLE SEGURO',      N'Und.', 0.19, -1),
- (N'TR-15007', N'COMPRESOR LUBRICADO 50 LTS 3 1/2 HP',     N'Und.', 0.19, -1),
- (N'PJ-9001',  N'TUBO PVC PRESION 1/2 X 6 M',              N'Und.', 0.05, -1),
- (N'PJ-1111',  N'ARENA LAVADA M3',                         N'm3',   0.00, -1),
- (N'PJ-0001',  N'PRODUCTO DESCONTINUADO',                  N'Und.', 0.19,  0);
+INSERT dbo.Inventarios ([CódigoInventario], [Descripción], UnidadDeMedida, Iva, Activo, IdInventarioClase) VALUES
+ (N'PJ-4137',  N'PINTURA ESMALTE AMARILLO X GALON',        N'gal',  0.19, -1, 1),
+ (N'PJ-28211', N'MOSQUETON ACERO 50 KN DOBLE SEGURO',      N'Und.', 0.19, -1, 1),
+ (N'TR-15007', N'COMPRESOR LUBRICADO 50 LTS 3 1/2 HP',     N'Und.', 0.19, -1, 1),
+ (N'PJ-9001',  N'TUBO PVC PRESION 1/2 X 6 M',              N'Und.', 0.05, -1, 1),
+ (N'PJ-1111',  N'ARENA LAVADA M3',                         N'm3',   0.00, -1, 1),
+ (N'PJ-0001',  N'PRODUCTO DESCONTINUADO',                  N'Und.', 0.19,  0, 1),
+ -- Casos que el filtro de la exportación debe dejar por fuera:
+ (N'732035',   N'Arrendamientos Equipo de Hoteles Costos',  N'und.', 0.19, -1, 3),   -- gasto (clase 3)
+ (N'PJ-7777',  N'PRODUCTO DE CATALOGO SIN MOVIMIENTO',      N'Und.', 0.19, -1, 1),   -- producto sin ventas ni existencia
+ (N'FLETE-01', N'FLETE VENDIDO',                            N'Und.', 0.00, -1, 2);   -- servicio que sí se vendió
 
 INSERT dbo.[CuentasContables - Documentos] VALUES (1, N'EA', 1), (1, N'REM', -1), (1, N'DREM', 1), (1, N'COT', 0);
 
@@ -141,7 +146,7 @@ INSERT dbo.[CuentasContables - Asientos] (IdEmpresa, IdCuentaContableDocumento, 
 INSERT dbo.CCA_M_Inventarios (IdAsientoContable, IdInventario, IdBodegaInventario, Cantidad, MontoMonetarioUnitario) VALUES
  (1, 1, N'Uno', 100, 30000), (1, 2, N'Uno', 20, 15000), (1, 3, N'Uno', 5, 900000), (1, 4, N'Uno', 60, 8000),
  (4, 1, N'Dos', 12, 30000),
- (2, 1, N'Uno', 4, 49370), (2, 3, N'Uno', 1, 1150000),   -- remisión de venta: da el "último precio de venta"
+ (2, 1, N'Uno', 4, 49370), (2, 3, N'Uno', 1, 1150000), (2, 9, N'Uno', 1, 25000),   -- remisión de venta: da el "último precio de venta"
  (3, 2, N'Uno', 50, 99999);  -- una cotización: efecto 0, no cuenta
 
 -- Tipos de identificación (los reales de Jimaco)
