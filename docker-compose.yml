@@ -33,8 +33,8 @@ services:
       Jwt__Audience: Jimaco.Remisiones
       Jwt__ExpiracionMinutos: "480"
       Cors__AllowedOrigins__0: http://localhost:4400
-      # Datos de prueba (productos y compradores demo). Quitar en producción.
-      Seed__DatosDemo: "true"
+      # Datos de prueba (productos y compradores demo): solo si SEED_DATOS_DEMO=true en .env.
+      Seed__DatosDemo: ${SEED_DATOS_DEMO:-false}
       Smtp__Host: ${SMTP_HOST:-}
       Smtp__Port: ${SMTP_PORT:-465}
       Smtp__UseSsl: ${SMTP_USE_SSL:-true}
