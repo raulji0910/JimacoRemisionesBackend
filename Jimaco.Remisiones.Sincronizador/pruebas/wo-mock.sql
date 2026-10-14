@@ -135,19 +135,26 @@ INSERT dbo.Inventarios ([CódigoInventario], [Descripción], UnidadDeMedida, Iva
  -- Casos que el filtro de la exportación debe dejar por fuera:
  (N'732035',   N'Arrendamientos Equipo de Hoteles Costos',  N'und.', 0.19, -1, 3),   -- gasto (clase 3)
  (N'PJ-7777',  N'PRODUCTO DE CATALOGO SIN MOVIMIENTO',      N'Und.', 0.19, -1, 1),   -- producto sin ventas ni existencia
- (N'FLETE-01', N'FLETE VENDIDO',                            N'Und.', 0.00, -1, 2);   -- servicio que sí se vendió
+ (N'FLETE-01', N'FLETE VENDIDO',                            N'Und.', 0.00, -1, 2),   -- servicio que sí se vendió
+ (N'14350101', N'COMPRAS FERRETERIA DEL 19%',             N'Und.', 0.19, -1, 1),   -- cuenta contable (código solo números) con existencia: fuera
+ (N'EX-5',    N'PLACA DE PROTECCION (EXPORTACION)',        N'Und.', 0.00, -1, 1),   -- exportación, vendido: fuera
+ (N'PJ-OLD',  N'PRODUCTO VENDIDO HACE TRES ANOS',          N'Und.', 0.19, -1, 1);   -- solo vendido hace años y sin existencia: fuera
 
 INSERT dbo.[CuentasContables - Documentos] VALUES (1, N'EA', 1), (1, N'REM', -1), (1, N'DREM', 1), (1, N'COT', 0);
 
 -- Entradas de almacén (+) y remisiones de venta (-)
 INSERT dbo.[CuentasContables - Asientos] (IdEmpresa, IdCuentaContableDocumento, prefijo, [DocumentoNúmero], Fecha, senAnulado) VALUES
- (1, N'EA', N'EA', 1, '2026-09-01', 0), (1, N'REM', N'REM', 29294, '2026-10-08', 0), (1, N'COT', N'COT', 16204, '2026-10-08', 0), (1, N'EA', N'EA', 2, '2026-09-15', 0);
+ (1, N'EA', N'EA', 1, '2026-09-01', 0), (1, N'REM', N'REM', 29294, DATEADD(DAY, -3, GETDATE()), 0), (1, N'COT', N'COT', 16204, DATEADD(DAY, -3, GETDATE()), 0), (1, N'EA', N'EA', 2, '2026-09-15', 0),
+ (1, N'REM', N'REM', 20001, '2023-05-01', 0);
 
 INSERT dbo.CCA_M_Inventarios (IdAsientoContable, IdInventario, IdBodegaInventario, Cantidad, MontoMonetarioUnitario) VALUES
  (1, 1, N'Uno', 100, 30000), (1, 2, N'Uno', 20, 15000), (1, 3, N'Uno', 5, 900000), (1, 4, N'Uno', 60, 8000),
  (4, 1, N'Dos', 12, 30000),
  (2, 1, N'Uno', 4, 49370), (2, 3, N'Uno', 1, 1150000), (2, 9, N'Uno', 1, 25000),   -- remisión de venta: da el "último precio de venta"
- (3, 2, N'Uno', 50, 99999);  -- una cotización: efecto 0, no cuenta
+ (3, 2, N'Uno', 50, 99999),  -- una cotización: efecto 0, no cuenta
+ (1, 10, N'Uno', 5, 100),     -- entrada de la cuenta contable 14350101
+ (2, 11, N'Uno', 1, 5000),    -- venta reciente del EX-5
+ (5, 12, N'Uno', 1, 1000);    -- venta de hace años del PJ-OLD (asiento 5, 2023)
 
 -- Tipos de identificación (los reales de Jimaco)
 INSERT dbo.[Terceros - Tipo de Identificación] VALUES
