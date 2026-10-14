@@ -20,7 +20,7 @@ public class SincronizacionController(ISincronizacionService sincronizacionServi
     [HttpPost("existencias")]
     [RequestSizeLimit(20_000_000)]
     public async Task<ActionResult<SincResultadoDto>> Existencias(SincLoteExistenciasDto lote, CancellationToken ct)
-        => Ok(await sincronizacionService.SincronizarExistenciasAsync(lote.Items, ct));
+        => Ok(await sincronizacionService.SincronizarExistenciasAsync(lote.Items, lote.LeidoEn, ct));
 
     [HttpPost("compradores")]
     [RequestSizeLimit(20_000_000)]

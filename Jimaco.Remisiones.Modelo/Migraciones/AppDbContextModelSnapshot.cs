@@ -113,6 +113,19 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.ToTable("Compradores");
                 });
 
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.EstadoIntegracionWo", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UltimaFotoExistenciasEn")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EstadoIntegracionWo");
+                });
+
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Producto", b =>
                 {
                     b.Property<int>("Id")

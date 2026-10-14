@@ -116,7 +116,7 @@ public class SincronizacionService(AppDbContext db, TimeProvider timeProvider) :
         return new SincResultadoDto(creados, actualizados, omitidos, avisos);
     }
 
-    public async Task<SincResultadoDto> SincronizarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, CancellationToken ct = default)
+    public async Task<SincResultadoDto> SincronizarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, DateTime leidoEn, CancellationToken ct = default)
     {
         var avisos = new List<string>();
         int creados = 0, actualizados = 0, omitidos = 0;
@@ -174,6 +174,19 @@ public class SincronizacionService(AppDbContext db, TimeProvider timeProvider) :
                 producto.ExistenciaActualizadaEn = ahora;
             await db.SaveChangesAsync(ct);
         }
+
+        // Hora de la "foto": se registra siempre, aunque no haya cambios (es el latido de la sincronización).
+        var estado = await db.EstadoIntegracionWo.FirstOrDefaultAsync(ct);
+        if (estado is null)
+        {
+            estado = new EstadoIntegracionWo { Id = 1 };
+            db.EstadoIntegracionWo.Add(estado);
+        }
+
+        var leidoUtc = leidoEn.ToUniversalTime();
+        if (estado.UltimaFotoExistenciasEn is null || leidoUtc > estado.UltimaFotoExistenciasEn)
+            estado.UltimaFotoExistenciasEn = leidoUtc;
+        await db.SaveChangesAsync(ct);
 
         if (omitidos > 0)
             avisos.Add($"{omitidos} existencia(s) de productos desconocidos se ignoraron.");

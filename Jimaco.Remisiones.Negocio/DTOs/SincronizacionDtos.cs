@@ -37,7 +37,9 @@ public record SincCompradorDto(
 
 public record SincLoteProductosDto(IReadOnlyList<SincProductoDto> Items);
 
-public record SincLoteExistenciasDto(IReadOnlyList<SincExistenciaDto> Items);
+// LeidoEn: instante (UTC) en que el Sincronizador leyó WO. Se manda aunque Items venga vacío: es el
+// "latido" que dice hasta cuándo la app está al día con WO.
+public record SincLoteExistenciasDto(IReadOnlyList<SincExistenciaDto> Items, DateTime LeidoEn);
 
 public record SincLoteCompradoresDto(IReadOnlyList<SincCompradorDto> Items);
 

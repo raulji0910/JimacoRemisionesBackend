@@ -22,8 +22,8 @@ public class RemisionesApiClient(HttpClient http, string email, string password)
     public Task<SincResultadoDto> EnviarProductosAsync(IReadOnlyList<SincProductoDto> items, CancellationToken ct = default)
         => PostAsync("api/sincronizacion/productos", new SincLoteProductosDto(items), ct);
 
-    public Task<SincResultadoDto> EnviarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, CancellationToken ct = default)
-        => PostAsync("api/sincronizacion/existencias", new SincLoteExistenciasDto(items), ct);
+    public Task<SincResultadoDto> EnviarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, DateTime leidoEnUtc, CancellationToken ct = default)
+        => PostAsync("api/sincronizacion/existencias", new SincLoteExistenciasDto(items, leidoEnUtc), ct);
 
     public Task<SincResultadoDto> EnviarCompradoresAsync(IReadOnlyList<SincCompradorDto> items, CancellationToken ct = default)
         => PostAsync("api/sincronizacion/compradores", new SincLoteCompradoresDto(items), ct);

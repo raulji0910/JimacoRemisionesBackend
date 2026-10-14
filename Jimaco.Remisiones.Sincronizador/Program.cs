@@ -88,6 +88,9 @@ async Task SincronizarProductosAsync()
 // ---- Existencias: se lee todo (agregado en la vista de WO) y se envía solo lo que cambió ----
 async Task SincronizarExistenciasAsync()
 {
+    // La hora de la "foto" se toma ANTES de leer WO: así una venta registrada mientras se leía nunca se da
+    // por incluida cuando quizá no lo está (lado seguro).
+    var leidoEn = DateTime.UtcNow;
     var filas = await wo.ObtenerExistenciasAsync();
 
     var cambiadas = filas
@@ -95,10 +98,16 @@ async Task SincronizarExistenciasAsync()
         .ToList();
 
     int creados = 0, actualizados = 0, omitidos = 0;
-    foreach (var grupo in cambiadas.Chunk(lote))
+    var lotes = cambiadas.Chunk(lote).ToList();
+
+    // Aunque no haya cambios se avisa la hora de la lectura: es el "latido" de la sincronización.
+    if (lotes.Count == 0)
+        await api.EnviarExistenciasAsync([], leidoEn);
+
+    foreach (var grupo in lotes)
     {
         var resultado = await api.EnviarExistenciasAsync(
-            grupo.Select(f => new SincExistenciaDto(f.IdWorldOffice, f.Bodega, f.Cantidad)).ToList());
+            grupo.Select(f => new SincExistenciaDto(f.IdWorldOffice, f.Bodega, f.Cantidad)).ToList(), leidoEn);
         creados += resultado.Creados; actualizados += resultado.Actualizados; omitidos += resultado.Omitidos;
 
         // Solo se da por enviado lo que la API ya aceptó.

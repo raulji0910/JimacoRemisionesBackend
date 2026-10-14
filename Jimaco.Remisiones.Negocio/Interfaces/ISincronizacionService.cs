@@ -8,7 +8,8 @@ public interface ISincronizacionService
     // precio de venta ni el costo: son de esta app.
     Task<SincResultadoDto> SincronizarProductosAsync(IReadOnlyList<SincProductoDto> items, CancellationToken ct = default);
 
-    Task<SincResultadoDto> SincronizarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, CancellationToken ct = default);
+    // leidoEn: cuándo se leyó WO (UTC). Actualiza la hora de la última foto aunque items venga vacío.
+    Task<SincResultadoDto> SincronizarExistenciasAsync(IReadOnlyList<SincExistenciaDto> items, DateTime leidoEn, CancellationToken ct = default);
 
     // Upsert por IdWorldOffice (o por documento si el comprador ya existía local). WO manda en todo
     // salvo el correo: solo se completa si el comprador local no tenía uno.

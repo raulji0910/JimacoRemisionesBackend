@@ -76,11 +76,11 @@ public class SincronizacionTests
         var r1 = await servicio.SincronizarExistenciasAsync(
         [
             new SincExistenciaDto(10, "Uno", 96), new SincExistenciaDto(10, "Dos", 12), new SincExistenciaDto(999, "Uno", 5)
-        ]);
+        ], DateTime.UtcNow);
         Assert.Equal(2, r1.Creados);
         Assert.Equal(1, r1.Omitidos);
 
-        var r2 = await servicio.SincronizarExistenciasAsync([new SincExistenciaDto(10, "Uno", 90)]);
+        var r2 = await servicio.SincronizarExistenciasAsync([new SincExistenciaDto(10, "Uno", 90)], DateTime.UtcNow);
         Assert.Equal(1, r2.Actualizados);
 
         var uno = await db.ProductoExistencias.SingleAsync(e => e.Bodega == "Uno");

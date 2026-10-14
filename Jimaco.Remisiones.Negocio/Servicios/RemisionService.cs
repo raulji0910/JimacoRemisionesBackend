@@ -251,6 +251,27 @@ public partial class RemisionService(
         return MapDetalle(remision);
     }
 
+    public async Task<RemisionDetalleDto?> RegistrarEnWoAsync(int id, RegistrarEnWoDto dto, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (remision is null)
+            return null;
+
+        if (remision.EstadoPago != EstadoPago.Pagada)
+            throw new InvalidOperationException("Solo se registra en World Office una remisión ya pagada.");
+        if (string.IsNullOrWhiteSpace(dto.Documento))
+            throw new InvalidOperationException("Indica el documento de World Office donde quedó registrada (ej. REM 29301).");
+
+        var documento = dto.Documento.Trim();
+        remision.SincronizacionWo = EstadoSincronizacionWo.Sincronizada;
+        remision.DocumentoWorldOffice = documento.Length <= 50 ? documento : documento[..50];
+        remision.SincronizadaWoEn = timeProvider.GetUtcNow().UtcDateTime;
+        remision.ErrorSincronizacionWo = null;
+
+        await db.SaveChangesAsync(ct);
+        return MapDetalle(remision);
+    }
+
     public async Task<RemisionDetalleDto?> AnularAsync(int id, AnularRemisionDto dto, bool esAdmin, CancellationToken ct = default)
     {
         var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);

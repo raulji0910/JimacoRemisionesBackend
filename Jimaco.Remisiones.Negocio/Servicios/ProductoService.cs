@@ -47,13 +47,16 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
         query = query.OrderBy(p => p.Nombre);
 
         var total = await query.CountAsync(ct);
-        var items = await Proyectar(query.Skip((pagina - 1) * tamanoPagina).Take(tamanoPagina)).ToListAsync(ct);
+        var items = await ConReservadoAsync(await Proyectar(query.Skip((pagina - 1) * tamanoPagina).Take(tamanoPagina)).ToListAsync(ct), ct);
 
         return new PaginaResultado<ProductoDto>(items, total, pagina, tamanoPagina);
     }
 
     public async Task<ProductoDto?> ObtenerPorIdAsync(int id, CancellationToken ct = default)
-        => await Proyectar(db.Productos.Where(p => p.Id == id)).FirstOrDefaultAsync(ct);
+    {
+        var producto = await Proyectar(db.Productos.Where(p => p.Id == id)).FirstOrDefaultAsync(ct);
+        return producto is null ? null : (await ConReservadoAsync([producto], ct))[0];
+    }
 
     public async Task<ProductoDto> CrearAsync(ProductoCrearDto dto, CancellationToken ct = default)
     {
@@ -123,6 +126,37 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
         db.Productos.Remove(producto);
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    // Reservado = unidades de remisiones PAGADAS en esta app que World Office todavía no refleja. Una
+    // remisión deja de reservar cuando su registro en WO quedó dentro de una foto de existencias leída
+    // DESPUÉS (SincronizadaWoEn <= hora de la última foto). Mientras tanto restarla evita vender dos
+    // veces lo mismo; si la sincronización se detiene, la foto envejece y la reserva se queda (lado seguro).
+    private async Task<IReadOnlyList<ProductoDto>> ConReservadoAsync(IReadOnlyList<ProductoDto> productos, CancellationToken ct)
+    {
+        if (productos.Count == 0)
+            return productos;
+
+        var ids = productos.Select(p => p.Id).ToList();
+        var foto = await db.EstadoIntegracionWo.Select(e => e.UltimaFotoExistenciasEn).FirstOrDefaultAsync(ct);
+
+        var items = db.RemisionItems.Where(i => ids.Contains(i.ProductoId) && i.Remision!.EstadoPago == EstadoPago.Pagada);
+        items = foto is null
+            ? items
+            : items.Where(i => i.Remision!.SincronizacionWo != EstadoSincronizacionWo.Sincronizada
+                            || i.Remision.SincronizadaWoEn == null
+                            || i.Remision.SincronizadaWoEn > foto);
+
+        var reservado = await items
+            .GroupBy(i => i.ProductoId)
+            .Select(g => new { ProductoId = g.Key, Total = g.Sum(i => i.Cantidad) })
+            .ToDictionaryAsync(x => x.ProductoId, x => (decimal)x.Total, ct);
+
+        return productos.Select(p =>
+        {
+            var res = reservado.GetValueOrDefault(p.Id);
+            return p with { Reservado = res, Disponible = p.Existencia is null ? null : p.Existencia - res };
+        }).ToList();
     }
 
     private static void Validar(string codigo, string nombre, decimal precioVenta, decimal? costo, int iva)

@@ -50,7 +50,9 @@ CREATE TABLE dbo.[CuentasContables - Asientos] (
     IdEmpresa int NOT NULL,
     IdCuentaContableDocumento nvarchar(4) NOT NULL,
     prefijo nvarchar(5) NULL,
-    [DocumentoNúmero] numeric(20,0) NOT NULL
+    [DocumentoNúmero] numeric(20,0) NOT NULL,
+    Fecha datetime NULL,
+    senAnulado smallint NULL
 );
 
 CREATE TABLE dbo.CCA_M_Inventarios (
@@ -58,7 +60,8 @@ CREATE TABLE dbo.CCA_M_Inventarios (
     IdAsientoContable int NOT NULL,
     IdInventario int NOT NULL,
     IdBodegaInventario nvarchar(30) NOT NULL,
-    Cantidad numeric(13,6) NOT NULL
+    Cantidad numeric(13,6) NOT NULL,
+    MontoMonetarioUnitario numeric(13,6) NULL
 );
 GO
 
@@ -132,14 +135,14 @@ INSERT dbo.Inventarios ([CódigoInventario], [Descripción], UnidadDeMedida, Iva
 INSERT dbo.[CuentasContables - Documentos] VALUES (1, N'EA', 1), (1, N'REM', -1), (1, N'DREM', 1), (1, N'COT', 0);
 
 -- Entradas de almacén (+) y remisiones de venta (-)
-INSERT dbo.[CuentasContables - Asientos] (IdEmpresa, IdCuentaContableDocumento, prefijo, [DocumentoNúmero]) VALUES
- (1, N'EA', N'EA', 1), (1, N'REM', N'REM', 29294), (1, N'COT', N'COT', 16204), (1, N'EA', N'EA', 2);
+INSERT dbo.[CuentasContables - Asientos] (IdEmpresa, IdCuentaContableDocumento, prefijo, [DocumentoNúmero], Fecha, senAnulado) VALUES
+ (1, N'EA', N'EA', 1, '2026-09-01', 0), (1, N'REM', N'REM', 29294, '2026-10-08', 0), (1, N'COT', N'COT', 16204, '2026-10-08', 0), (1, N'EA', N'EA', 2, '2026-09-15', 0);
 
-INSERT dbo.CCA_M_Inventarios (IdAsientoContable, IdInventario, IdBodegaInventario, Cantidad) VALUES
- (1, 1, N'Uno', 100), (1, 2, N'Uno', 20), (1, 3, N'Uno', 5), (1, 4, N'Uno', 60),
- (4, 1, N'Dos', 12),
- (2, 1, N'Uno', 4), (2, 3, N'Uno', 1),
- (3, 2, N'Uno', 50);  -- una cotización: efecto 0, no cuenta
+INSERT dbo.CCA_M_Inventarios (IdAsientoContable, IdInventario, IdBodegaInventario, Cantidad, MontoMonetarioUnitario) VALUES
+ (1, 1, N'Uno', 100, 30000), (1, 2, N'Uno', 20, 15000), (1, 3, N'Uno', 5, 900000), (1, 4, N'Uno', 60, 8000),
+ (4, 1, N'Dos', 12, 30000),
+ (2, 1, N'Uno', 4, 49370), (2, 3, N'Uno', 1, 1150000),   -- remisión de venta: da el "último precio de venta"
+ (3, 2, N'Uno', 50, 99999);  -- una cotización: efecto 0, no cuenta
 
 -- Tipos de identificación (los reales de Jimaco)
 INSERT dbo.[Terceros - Tipo de Identificación] VALUES

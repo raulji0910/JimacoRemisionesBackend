@@ -11,6 +11,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Remision> Remisiones => Set<Remision>();
     public DbSet<RemisionItem> RemisionItems => Set<RemisionItem>();
     public DbSet<ProductoExistencia> ProductoExistencias => Set<ProductoExistencia>();
+    public DbSet<EstadoIntegracionWo> EstadoIntegracionWo => Set<EstadoIntegracionWo>();
 
     // Consumida vía "SELECT NEXT VALUE FOR dbo.SecuenciaConsecutivoRemision" para asignar el
     // número oficial de la remisión de forma atómica ante concurrencia.
@@ -22,6 +23,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasIndex(p => p.Codigo).IsUnique();
             e.HasIndex(p => p.IdWorldOffice).IsUnique().HasFilter("[IdWorldOffice] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<EstadoIntegracionWo>(e =>
+        {
+            // Fila única (Id = 1), se asigna a mano.
+            e.Property(x => x.Id).ValueGeneratedNever();
         });
 
         modelBuilder.Entity<ProductoExistencia>(e =>
