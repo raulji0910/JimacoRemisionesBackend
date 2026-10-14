@@ -34,6 +34,19 @@ public class SincronizacionTests
     }
 
     [Fact]
+    public async Task Iva_no_soportado_se_guarda_como_19_pero_avisa()
+    {
+        var (servicio, db) = Crear();
+
+        var r = await servicio.SincronizarProductosAsync([Prod(10, "PJ-8", iva: 8), Prod(11, "PJ-5", iva: 5)]);
+
+        Assert.Equal(19, (await db.Productos.SingleAsync(p => p.Codigo == "PJ-8")).Iva);
+        Assert.Equal(5, (await db.Productos.SingleAsync(p => p.Codigo == "PJ-5")).Iva);
+        Assert.Single(r.Avisos);
+        Assert.Contains("PJ-8", r.Avisos[0]);
+    }
+
+    [Fact]
     public async Task Resincronizar_nunca_pisa_el_precio_ni_el_costo_locales()
     {
         var (servicio, db) = Crear();

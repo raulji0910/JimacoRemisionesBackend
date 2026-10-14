@@ -44,7 +44,11 @@ public class SincronizacionService(AppDbContext db, TimeProvider timeProvider) :
                 continue;
             }
 
+            // La app solo maneja 0, 5 y 19. Cualquier otra tarifa de WO se guarda como 19 pero se avisa
+            // para que se revise a mano (un IVA mal puesto es plata).
             var iva = item.Iva is 0 or 5 or 19 ? item.Iva : 19;
+            if (iva != item.Iva)
+                avisos.Add($"{codigo}: IVA de {item.Iva}% en World Office no soportado; se guardó como 19%. Revísalo.");
             var nombre = Truncar(item.Nombre.Trim(), 500)!;
             var unidad = Truncar(item.UnidadMedida?.Trim(), 50);
 
