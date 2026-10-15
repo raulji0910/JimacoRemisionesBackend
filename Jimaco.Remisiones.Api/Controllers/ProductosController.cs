@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Jimaco.Remisiones.Negocio.DTOs;
 using Jimaco.Remisiones.Negocio.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -26,12 +27,14 @@ public class ProductosController(IProductoService productoService) : ControllerB
         return producto is null ? NotFound() : Ok(producto);
     }
 
+    // El catálogo (precios, IVA, productos nuevos) lo administra un administrador.
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<ProductoDto>> Crear(ProductoCrearDto dto, CancellationToken ct)
     {
         try
         {
-            var creado = await productoService.CrearAsync(dto, ct);
+            var creado = await productoService.CrearAsync(dto, User.FindFirstValue(ClaimTypes.Name), ct);
             return CreatedAtAction(nameof(ObtenerPorId), new { id = creado.Id }, creado);
         }
         catch (InvalidOperationException ex)
@@ -41,6 +44,7 @@ public class ProductosController(IProductoService productoService) : ControllerB
     }
 
     [HttpPut("{id:int}")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<ProductoDto>> Actualizar(int id, ProductoActualizarDto dto, CancellationToken ct)
     {
         try

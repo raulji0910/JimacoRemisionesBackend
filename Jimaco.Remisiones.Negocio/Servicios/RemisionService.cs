@@ -75,7 +75,6 @@ public partial class RemisionService(
                 r.TipoEntrega,
                 r.EstadoEntrega,
                 r.CorreoEnviadoEn,
-                r.SincronizacionWo,
                 Items = r.Items.Select(i => new { i.PrecioUnitario, i.Cantidad, i.Iva }).ToList()
             })
             .ToListAsync(ct);
@@ -88,7 +87,7 @@ public partial class RemisionService(
             return new RemisionResumenDto(
                 f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
                 f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.TipoEntrega, f.EstadoEntrega,
-                f.CorreoEnviadoEn is not null, f.SincronizacionWo);
+                f.CorreoEnviadoEn is not null);
         }).ToList();
 
         return new PaginaResultado<RemisionResumenDto>(items, total, pagina, tamanoPagina);
@@ -176,6 +175,13 @@ public partial class RemisionService(
             throw new InvalidOperationException("La remisión no tiene ítems.");
 
         var ahora = timeProvider.GetUtcNow().UtcDateTime;
+
+        // El stock sale en el momento del cobro. Si algún producto no alcanza, Kardex lanza y no se guarda nada.
+        var productos = await CargarProductosAsync(remision, ct);
+        foreach (var item in remision.Items)
+            Kardex.Registrar(db, productos[item.ProductoId], TipoMovimiento.Venta, -item.Cantidad, ahora, usuario,
+                remision.Id, $"Remisión {Formatear(remision.Consecutivo)}");
+
         remision.EstadoPago = EstadoPago.Pagada;
         remision.FechaPago = ahora;
         remision.PagadaPor = usuario;
@@ -251,28 +257,7 @@ public partial class RemisionService(
         return MapDetalle(remision);
     }
 
-    public async Task<RemisionDetalleDto?> RegistrarEnWoAsync(int id, RegistrarEnWoDto dto, CancellationToken ct = default)
-    {
-        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (remision is null)
-            return null;
-
-        if (remision.EstadoPago != EstadoPago.Pagada)
-            throw new InvalidOperationException("Solo se registra en World Office una remisión ya pagada.");
-        if (string.IsNullOrWhiteSpace(dto.Documento))
-            throw new InvalidOperationException("Indica el documento de World Office donde quedó registrada (ej. REM 29301).");
-
-        var documento = dto.Documento.Trim();
-        remision.SincronizacionWo = EstadoSincronizacionWo.Sincronizada;
-        remision.DocumentoWorldOffice = documento.Length <= 50 ? documento : documento[..50];
-        remision.SincronizadaWoEn = timeProvider.GetUtcNow().UtcDateTime;
-        remision.ErrorSincronizacionWo = null;
-
-        await db.SaveChangesAsync(ct);
-        return MapDetalle(remision);
-    }
-
-    public async Task<RemisionDetalleDto?> AnularAsync(int id, AnularRemisionDto dto, bool esAdmin, CancellationToken ct = default)
+    public async Task<RemisionDetalleDto?> AnularAsync(int id, AnularRemisionDto dto, bool esAdmin, string? usuario = null, CancellationToken ct = default)
     {
         var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (remision is null)
@@ -284,13 +269,19 @@ public partial class RemisionService(
             throw new InvalidOperationException("La remisión ya está anulada.");
         if (remision.EstadoPago == EstadoPago.Pagada && !esAdmin)
             throw new InvalidOperationException("Solo un administrador puede anular una remisión ya pagada.");
-        // Si el inventario ya se descontó en World Office, anular acá dejaría los dos sistemas
-        // descuadrados: esa reversa se hace allá.
-        if (remision.SincronizacionWo == EstadoSincronizacionWo.Sincronizada)
-            throw new InvalidOperationException("Esta remisión ya descontó inventario en World Office. La devolución debe hacerse allá antes de anularla.");
+        var ahora = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Una remisión ya pagada había sacado stock: se devuelve al anularla.
+        if (remision.EstadoPago == EstadoPago.Pagada)
+        {
+            var productos = await CargarProductosAsync(remision, ct);
+            foreach (var item in remision.Items)
+                Kardex.Registrar(db, productos[item.ProductoId], TipoMovimiento.Reintegro, item.Cantidad, ahora, usuario,
+                    remision.Id, $"Anulación de {Formatear(remision.Consecutivo)}");
+        }
 
         remision.EstadoPago = EstadoPago.Anulada;
-        remision.FechaAnulacion = timeProvider.GetUtcNow().UtcDateTime;
+        remision.FechaAnulacion = ahora;
         remision.MotivoAnulacion = dto.Motivo.Trim();
 
         await db.SaveChangesAsync(ct);
@@ -392,9 +383,11 @@ public partial class RemisionService(
                 ?? throw new InvalidOperationException($"No existe el producto con id {productoId}.");
             if (!producto.Activo)
                 throw new InvalidOperationException($"El producto '{producto.Codigo}' está inactivo.");
-            // Los productos nuevos de World Office nacen sin precio (WO no lo guarda en el catálogo).
             if (producto.PrecioVenta <= 0)
                 throw new InvalidOperationException($"El producto '{producto.Codigo}' no tiene precio de venta. Asígnalo en Productos antes de venderlo.");
+            // El stock es de esta app, así que se puede validar de verdad: no se arma una remisión con más de lo que hay.
+            if (cantidad > producto.Stock)
+                throw new InvalidOperationException($"Stock insuficiente de '{producto.Codigo}': hay {producto.Stock} y pides {cantidad}.");
 
             items.Add(new RemisionItem
             {
@@ -435,7 +428,18 @@ public partial class RemisionService(
         }
     }
 
-    private static string Formatear(int consecutivo) => $"RM-{consecutivo:D5}";
+    internal static string Formatear(int consecutivo) => $"RM-{consecutivo:D5}";
+
+    // Productos de la remisión, rastreados para poder mover su stock.
+    private async Task<Dictionary<int, Producto>> CargarProductosAsync(Remision remision, CancellationToken ct)
+    {
+        var ids = remision.Items.Select(i => i.ProductoId).Distinct().ToList();
+        var productos = await db.Productos.Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var faltante = ids.FirstOrDefault(id => !productos.ContainsKey(id));
+        if (faltante != 0)
+            throw new InvalidOperationException($"El producto con id {faltante} ya no existe.");
+        return productos;
+    }
 
     private static RemisionDetalleDto MapDetalle(Remision r)
     {
@@ -456,7 +460,6 @@ public partial class RemisionService(
             r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReferenciaPago,
             r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
             r.FechaAnulacion, r.MotivoAnulacion,
-            r.SincronizacionWo, r.DocumentoWorldOffice, r.ErrorSincronizacionWo,
             items, calculo.SubtotalItems, r.Descuento, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);
     }
 }

@@ -37,8 +37,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     Ciudad = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     Telefono = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     Email = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Origen = table.Column<int>(type: "int", nullable: false),
-                    CodigoWorldOffice = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
                     Activo = table.Column<bool>(type: "bit", nullable: false),
                     FechaCreacion = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
@@ -59,9 +57,10 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     PrecioVenta = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     Costo = table.Column<decimal>(type: "decimal(18,2)", nullable: true),
                     Iva = table.Column<int>(type: "int", nullable: false),
-                    Origen = table.Column<int>(type: "int", nullable: false),
+                    Stock = table.Column<int>(type: "int", nullable: false),
                     Activo = table.Column<bool>(type: "bit", nullable: false),
-                    FechaCreacion = table.Column<DateTime>(type: "datetime2", nullable: false)
+                    FechaCreacion = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -112,10 +111,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     CorreoEnviadoEn = table.Column<DateTime>(type: "datetime2", nullable: true),
                     FechaAnulacion = table.Column<DateTime>(type: "datetime2", nullable: true),
                     MotivoAnulacion = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
-                    SincronizacionWo = table.Column<int>(type: "int", nullable: false),
-                    SincronizadaWoEn = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DocumentoWorldOffice = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: true),
-                    ErrorSincronizacionWo = table.Column<string>(type: "nvarchar(1000)", maxLength: 1000, nullable: true),
                     FechaCreacion = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreadoPor = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
                     RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: false)
@@ -129,6 +124,32 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         principalTable: "Compradores",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "MovimientosInventario",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    ProductoId = table.Column<int>(type: "int", nullable: false),
+                    Fecha = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Tipo = table.Column<int>(type: "int", nullable: false),
+                    Cantidad = table.Column<int>(type: "int", nullable: false),
+                    SaldoResultante = table.Column<int>(type: "int", nullable: false),
+                    RemisionId = table.Column<int>(type: "int", nullable: true),
+                    Usuario = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    Motivo = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MovimientosInventario", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_MovimientosInventario_Productos_ProductoId",
+                        column: x => x.ProductoId,
+                        principalTable: "Productos",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -169,6 +190,16 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_MovimientosInventario_ProductoId_Fecha",
+                table: "MovimientosInventario",
+                columns: new[] { "ProductoId", "Fecha" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MovimientosInventario_RemisionId",
+                table: "MovimientosInventario",
+                column: "RemisionId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Productos_Codigo",
                 table: "Productos",
                 column: "Codigo",
@@ -191,11 +222,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                 column: "EstadoPago");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Remisiones_SincronizacionWo",
-                table: "Remisiones",
-                column: "SincronizacionWo");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_RemisionItems_RemisionId",
                 table: "RemisionItems",
                 column: "RemisionId");
@@ -211,13 +237,16 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "Productos");
+                name: "MovimientosInventario");
 
             migrationBuilder.DropTable(
                 name: "RemisionItems");
 
             migrationBuilder.DropTable(
                 name: "Usuarios");
+
+            migrationBuilder.DropTable(
+                name: "Productos");
 
             migrationBuilder.DropTable(
                 name: "Remisiones");

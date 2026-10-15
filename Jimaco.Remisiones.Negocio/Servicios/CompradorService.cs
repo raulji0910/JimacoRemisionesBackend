@@ -80,7 +80,6 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
             PrimerNombre = dto.PrimerNombre.Trim(),
             NombreCompleto = "",
             Email = dto.Email.Trim(),
-            Origen = OrigenRegistro.Local,
             FechaCreacion = timeProvider.GetUtcNow().UtcDateTime
         };
         Aplicar(comprador, dto);
@@ -102,10 +101,6 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
 
         if (await db.Compradores.AnyAsync(c => c.Id != id && c.NumeroDocumento == numero, ct))
             throw new InvalidOperationException($"Ya existe un comprador con el documento '{numero}'.");
-
-        // El documento de un tercero que viene de World Office no se cambia (es su llave allá).
-        if (comprador.Origen == OrigenRegistro.WorldOffice && comprador.NumeroDocumento != numero)
-            throw new InvalidOperationException("No se puede cambiar el documento de un comprador que viene de World Office.");
 
         comprador.TipoDocumento = dto.TipoDocumento.Trim().ToUpperInvariant();
         comprador.NumeroDocumento = numero;
@@ -180,8 +175,7 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
     // Expresión traducible a SQL (para Select dentro de queries).
     private static CompradorDto Proyectar(Comprador c) => new(
         c.Id, c.TipoPersona, c.TipoDocumento, c.NumeroDocumento, c.Dv, c.PrimerNombre, c.SegundoNombre,
-        c.PrimerApellido, c.SegundoApellido, c.NombreCompleto, c.Direccion, c.Ciudad, c.Telefono, c.Email,
-        c.Origen, c.Activo);
+        c.PrimerApellido, c.SegundoApellido, c.NombreCompleto, c.Direccion, c.Ciudad, c.Telefono, c.Email, c.Activo);
 
     private static CompradorDto ProyectarEnMemoria(Comprador c) => Proyectar(c);
 }

@@ -3,12 +3,14 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Jimaco.Remisiones.Modelo.Entidades;
 
-// Catálogo de venta directa: un solo precio de venta fijo por producto (sin proveedores ni
-// cotizaciones que comparar). El código es el de World Office y es obligatorio y único.
+// Producto de venta directa: un solo precio de venta fijo (sin proveedores ni cotizaciones). El
+// inventario se maneja SOLO en esta aplicación: Stock es la existencia actual y cada cambio queda
+// registrado en MovimientoInventario (kardex). No hay integración con World Office.
 public class Producto
 {
     public int Id { get; set; }
 
+    // Código tal como está en el listado de herramientas (ej. "PJ-26550"). Único.
     [MaxLength(50)]
     public required string Codigo { get; set; }
 
@@ -18,29 +20,27 @@ public class Producto
     [MaxLength(50)]
     public string? UnidadMedida { get; set; }
 
-    // Precio de venta al público, SIN IVA (el IVA se desglosa aparte en la remisión, igual que
-    // en el cotizador de Ferrealiados).
+    // Precio de venta por unidad, ANTES de IVA (el IVA se desglosa aparte en la remisión).
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrecioVenta { get; set; }
 
-    // Costo del producto, solo para calcular margen. Nunca se muestra en la remisión.
+    // Costo, solo para calcular margen. Nunca se muestra en la remisión.
     [Column(TypeName = "decimal(18,2)")]
     public decimal? Costo { get; set; }
 
     // Tarifa de IVA en %: 0, 5 o 19.
     public int Iva { get; set; } = 19;
 
-    public OrigenRegistro Origen { get; set; } = OrigenRegistro.Local;
+    // Existencia actual en unidades. Solo cambia a través de movimientos (ver Kardex).
+    public int Stock { get; set; }
 
     public bool Activo { get; set; } = true;
 
     public DateTime FechaCreacion { get; set; }
 
-    // IdInventario en World Office, cuando el producto viene de allá (Sincronizador).
-    public int? IdWorldOffice { get; set; }
+    // Concurrencia optimista: dos ventas simultáneas del mismo producto no pueden dejar el stock negativo.
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = [];
 
-    // Última vez que el Sincronizador actualizó las existencias de este producto.
-    public DateTime? ExistenciaActualizadaEn { get; set; }
-
-    public ICollection<ProductoExistencia> Existencias { get; set; } = new List<ProductoExistencia>();
+    public ICollection<MovimientoInventario> Movimientos { get; set; } = new List<MovimientoInventario>();
 }

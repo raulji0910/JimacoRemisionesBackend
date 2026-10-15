@@ -45,8 +45,7 @@ public record RemisionResumenDto(
     EstadoPago EstadoPago,
     TipoEntrega TipoEntrega,
     EstadoEntrega EstadoEntrega,
-    bool CorreoEnviado,
-    EstadoSincronizacionWo SincronizacionWo);
+    bool CorreoEnviado);
 
 public record RemisionDetalleDto(
     int Id,
@@ -73,9 +72,6 @@ public record RemisionDetalleDto(
     DateTime? CorreoEnviadoEn,
     DateTime? FechaAnulacion,
     string? MotivoAnulacion,
-    EstadoSincronizacionWo SincronizacionWo,
-    string? DocumentoWorldOffice,
-    string? ErrorSincronizacionWo,
     IReadOnlyList<RemisionItemDto> Items,
     decimal SubtotalItems,
     decimal Descuento,

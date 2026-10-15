@@ -22,15 +22,6 @@ public enum EstadoEntrega
     Entregada = 2
 }
 
-// Estado de la sincronización de la remisión con World Office (descuento de inventario).
-// Fase 1: todas quedan en Pendiente; el Sincronizador (Fase 2) las irá marcando.
-public enum EstadoSincronizacionWo
-{
-    Pendiente = 1,
-    Sincronizada = 2,
-    Error = 3
-}
-
 // Documento de venta directa. Nace Pendiente (de pago) con su consecutivo oficial (SEQUENCE) y
 // los datos del comprador congelados (snapshot). Mientras está Pendiente se puede editar;
 // al marcarla Pagada queda fija (solo se puede anular, con motivo).
@@ -96,17 +87,6 @@ public class Remision
 
     [MaxLength(500)]
     public string? MotivoAnulacion { get; set; }
-
-    public EstadoSincronizacionWo SincronizacionWo { get; set; } = EstadoSincronizacionWo.Pendiente;
-
-    public DateTime? SincronizadaWoEn { get; set; }
-
-    // Referencia del documento creado en World Office (prefijo + número), cuando se sincronice.
-    [MaxLength(50)]
-    public string? DocumentoWorldOffice { get; set; }
-
-    [MaxLength(1000)]
-    public string? ErrorSincronizacionWo { get; set; }
 
     public DateTime FechaCreacion { get; set; }
 

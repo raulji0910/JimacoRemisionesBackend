@@ -3,30 +3,15 @@ using Jimaco.Remisiones.Modelo.Entidades;
 using Jimaco.Remisiones.Negocio.DTOs;
 using Jimaco.Remisiones.Negocio.Interfaces;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 
 namespace Jimaco.Remisiones.Negocio.Servicios;
 
-public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOptions<WorldOfficeOptions> woOptions) : IProductoService
+public class ProductoService(AppDbContext db, TimeProvider timeProvider) : IProductoService
 {
     private static readonly int[] TarifasIva = [0, 5, 19];
 
-    private string BodegaVenta => woOptions.Value.BodegaVenta;
-
-    // Una sola proyección para lista y detalle: incluye la existencia en la bodega de venta.
-    private IQueryable<ProductoDto> Proyectar(IQueryable<Producto> query)
-    {
-        var bodega = BodegaVenta;
-        return query.Select(p => new ProductoDto(
-            p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Origen, p.Activo,
-            p.IdWorldOffice,
-            // Sin sincronizar nunca => null ("sin dato"), no 0. Ya sincronizado y sin filas en esta
-            // bodega => 0 (WO solo tiene filas donde hubo movimientos).
-            p.ExistenciaActualizadaEn == null
-                ? (decimal?)null
-                : (p.Existencias.Where(e => e.Bodega == bodega).Sum(e => (decimal?)e.Cantidad) ?? 0m),
-            p.ExistenciaActualizadaEn));
-    }
+    internal static ProductoDto Mapear(Producto p)
+        => new(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Activo, p.Stock);
 
     public async Task<PaginaResultado<ProductoDto>> BuscarAsync(string? texto, bool soloActivos, int pagina, int tamanoPagina, CancellationToken ct = default)
     {
@@ -44,28 +29,35 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
             query = query.Where(p => EF.Functions.Like(p.Codigo, patron) || EF.Functions.Like(p.Nombre, patron));
         }
 
-        query = query.OrderBy(p => p.Nombre);
+        query = query.OrderBy(p => p.Codigo);
 
         var total = await query.CountAsync(ct);
-        var items = await ConReservadoAsync(await Proyectar(query.Skip((pagina - 1) * tamanoPagina).Take(tamanoPagina)).ToListAsync(ct), ct);
+        var items = await query
+            .Skip((pagina - 1) * tamanoPagina)
+            .Take(tamanoPagina)
+            .Select(p => new ProductoDto(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Activo, p.Stock))
+            .ToListAsync(ct);
 
         return new PaginaResultado<ProductoDto>(items, total, pagina, tamanoPagina);
     }
 
     public async Task<ProductoDto?> ObtenerPorIdAsync(int id, CancellationToken ct = default)
-    {
-        var producto = await Proyectar(db.Productos.Where(p => p.Id == id)).FirstOrDefaultAsync(ct);
-        return producto is null ? null : (await ConReservadoAsync([producto], ct))[0];
-    }
+        => await db.Productos
+            .Where(p => p.Id == id)
+            .Select(p => new ProductoDto(p.Id, p.Codigo, p.Nombre, p.UnidadMedida, p.PrecioVenta, p.Costo, p.Iva, p.Activo, p.Stock))
+            .FirstOrDefaultAsync(ct);
 
-    public async Task<ProductoDto> CrearAsync(ProductoCrearDto dto, CancellationToken ct = default)
+    public async Task<ProductoDto> CrearAsync(ProductoCrearDto dto, string? usuario = null, CancellationToken ct = default)
     {
         var codigo = NormalizarCodigo(dto.Codigo);
         Validar(codigo, dto.Nombre, dto.PrecioVenta, dto.Costo, dto.Iva);
+        if (dto.StockInicial < 0)
+            throw new InvalidOperationException("El stock inicial no puede ser negativo.");
 
         if (await db.Productos.AnyAsync(p => p.Codigo == codigo, ct))
             throw new InvalidOperationException($"Ya existe un producto con el código '{codigo}'.");
 
+        var ahora = timeProvider.GetUtcNow().UtcDateTime;
         var producto = new Producto
         {
             Codigo = codigo,
@@ -74,15 +66,17 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
             PrecioVenta = dto.PrecioVenta,
             Costo = dto.Costo,
             Iva = dto.Iva,
-            Origen = OrigenRegistro.Local,
             Activo = true,
-            FechaCreacion = timeProvider.GetUtcNow().UtcDateTime
+            FechaCreacion = ahora
         };
-
         db.Productos.Add(producto);
-        await db.SaveChangesAsync(ct);
 
-        return (await ObtenerPorIdAsync(producto.Id, ct))!;
+        // El saldo inicial queda en el historial como la primera línea del kardex.
+        if (dto.StockInicial > 0)
+            Kardex.Registrar(db, producto, TipoMovimiento.CargaInicial, dto.StockInicial, ahora, usuario, motivo: "Stock inicial");
+
+        await db.SaveChangesAsync(ct);
+        return Mapear(producto);
     }
 
     public async Task<ProductoDto?> ActualizarAsync(int id, ProductoActualizarDto dto, CancellationToken ct = default)
@@ -97,11 +91,6 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
         if (await db.Productos.AnyAsync(p => p.Id != id && p.Codigo == codigo, ct))
             throw new InvalidOperationException($"Ya existe un producto con el código '{codigo}'.");
 
-        // El código de un producto que ya viene de World Office no se cambia: es la llave con la
-        // que se descuenta el inventario allá.
-        if (producto.Origen == OrigenRegistro.WorldOffice && producto.Codigo != codigo)
-            throw new InvalidOperationException("No se puede cambiar el código de un producto que viene de World Office.");
-
         producto.Codigo = codigo;
         producto.Nombre = dto.Nombre.Trim();
         producto.UnidadMedida = dto.UnidadMedida?.Trim();
@@ -111,7 +100,7 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
         producto.Activo = dto.Activo;
 
         await db.SaveChangesAsync(ct);
-        return await ObtenerPorIdAsync(id, ct);
+        return Mapear(producto);
     }
 
     public async Task<bool> EliminarAsync(int id, CancellationToken ct = default)
@@ -123,40 +112,10 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
         if (await db.RemisionItems.AnyAsync(i => i.ProductoId == id, ct))
             throw new InvalidOperationException("No se puede eliminar: este producto está en una o más remisiones. Desactívalo en su lugar.");
 
+        // Su historial de movimientos se borra con él (solo puede tener carga inicial/entradas/ajustes).
         db.Productos.Remove(producto);
         await db.SaveChangesAsync(ct);
         return true;
-    }
-
-    // Reservado = unidades de remisiones PAGADAS en esta app que World Office todavía no refleja. Una
-    // remisión deja de reservar cuando su registro en WO quedó dentro de una foto de existencias leída
-    // DESPUÉS (SincronizadaWoEn <= hora de la última foto). Mientras tanto restarla evita vender dos
-    // veces lo mismo; si la sincronización se detiene, la foto envejece y la reserva se queda (lado seguro).
-    private async Task<IReadOnlyList<ProductoDto>> ConReservadoAsync(IReadOnlyList<ProductoDto> productos, CancellationToken ct)
-    {
-        if (productos.Count == 0)
-            return productos;
-
-        var ids = productos.Select(p => p.Id).ToList();
-        var foto = await db.EstadoIntegracionWo.Select(e => e.UltimaFotoExistenciasEn).FirstOrDefaultAsync(ct);
-
-        var items = db.RemisionItems.Where(i => ids.Contains(i.ProductoId) && i.Remision!.EstadoPago == EstadoPago.Pagada);
-        items = foto is null
-            ? items
-            : items.Where(i => i.Remision!.SincronizacionWo != EstadoSincronizacionWo.Sincronizada
-                            || i.Remision.SincronizadaWoEn == null
-                            || i.Remision.SincronizadaWoEn > foto);
-
-        var reservado = await items
-            .GroupBy(i => i.ProductoId)
-            .Select(g => new { ProductoId = g.Key, Total = g.Sum(i => i.Cantidad) })
-            .ToDictionaryAsync(x => x.ProductoId, x => (decimal)x.Total, ct);
-
-        return productos.Select(p =>
-        {
-            var res = reservado.GetValueOrDefault(p.Id);
-            return p with { Reservado = res, Disponible = p.Existencia is null ? null : p.Existencia - res };
-        }).ToList();
     }
 
     private static void Validar(string codigo, string nombre, decimal precioVenta, decimal? costo, int iva)
@@ -173,6 +132,6 @@ public class ProductoService(AppDbContext db, TimeProvider timeProvider, IOption
             throw new InvalidOperationException("El IVA debe ser 0, 5 o 19.");
     }
 
-    // Mayúsculas y sin espacios en los extremos: el código es llave de cruce con World Office.
+    // Mayúsculas y sin espacios en los extremos.
     internal static string NormalizarCodigo(string codigo) => (codigo ?? "").Trim().ToUpperInvariant();
 }

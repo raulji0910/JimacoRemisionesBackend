@@ -58,12 +58,6 @@ public class Comprador
     [MaxLength(200)]
     public required string Email { get; set; }
 
-    public OrigenRegistro Origen { get; set; } = OrigenRegistro.Local;
-
-    // IdTercero en World Office, cuando el registro viene de allá o ya se empujó (Fase 2).
-    [MaxLength(50)]
-    public string? CodigoWorldOffice { get; set; }
-
     public bool Activo { get; set; } = true;
 
     public DateTime FechaCreacion { get; set; }

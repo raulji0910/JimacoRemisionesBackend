@@ -4,9 +4,9 @@ namespace Jimaco.Remisiones.Negocio.Interfaces;
 
 public interface IInventarioService
 {
-    Task<EstadoInventarioDto> ObtenerEstadoAsync(CancellationToken ct = default);
+    // Historial (kardex) de un producto, del más reciente al más antiguo.
+    Task<PaginaResultado<MovimientoDto>?> ListarMovimientosAsync(int productoId, int pagina, int tamanoPagina, CancellationToken ct = default);
 
-    // Carga/actualiza productos y su existencia desde un lote de filas exportadas de World Office. Es
-    // idempotente: se puede repetir para refrescar la foto. Nunca borra productos.
-    Task<ImportarInventarioResultadoDto> ImportarAsync(ImportarInventarioDto dto, CancellationToken ct = default);
+    // Entrada o ajuste manual. Devuelve el producto con su nuevo stock; null si no existe.
+    Task<ProductoDto?> RegistrarMovimientoAsync(int productoId, MovimientoManualDto dto, string? usuario, CancellationToken ct = default);
 }

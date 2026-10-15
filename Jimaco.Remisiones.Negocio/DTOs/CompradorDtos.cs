@@ -17,7 +17,6 @@ public record CompradorDto(
     string? Ciudad,
     string? Telefono,
     string Email,
-    OrigenRegistro Origen,
     bool Activo);
 
 // Mismo cuerpo para crear y editar. En persona jurídica solo se usa PrimerNombre (razón social).

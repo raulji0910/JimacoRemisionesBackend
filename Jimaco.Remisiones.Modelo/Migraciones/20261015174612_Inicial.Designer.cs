@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Jimaco.Remisiones.Modelo.Migraciones
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261009203314_AgregarIntegracionWorldOffice")]
-    partial class AgregarIntegracionWorldOffice
+    [Migration("20261015174612_Inicial")]
+    partial class Inicial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -42,10 +42,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
-                    b.Property<string>("CodigoWorldOffice")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
                     b.Property<string>("Direccion")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
@@ -71,9 +67,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
-
-                    b.Property<int>("Origen")
-                        .HasColumnType("int");
 
                     b.Property<string>("PrimerApellido")
                         .HasMaxLength(100)
@@ -106,14 +99,55 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CodigoWorldOffice");
-
                     b.HasIndex("NombreCompleto");
 
                     b.HasIndex("NumeroDocumento")
                         .IsUnique();
 
                     b.ToTable("Compradores");
+                });
+
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.MovimientoInventario", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Cantidad")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("Fecha")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Motivo")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int>("ProductoId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("RemisionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SaldoResultante")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Tipo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Usuario")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RemisionId");
+
+                    b.HasIndex("ProductoId", "Fecha");
+
+                    b.ToTable("MovimientosInventario");
                 });
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Producto", b =>
@@ -135,14 +169,8 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<decimal?>("Costo")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<DateTime?>("ExistenciaActualizadaEn")
-                        .HasColumnType("datetime2");
-
                     b.Property<DateTime>("FechaCreacion")
                         .HasColumnType("datetime2");
-
-                    b.Property<int?>("IdWorldOffice")
-                        .HasColumnType("int");
 
                     b.Property<int>("Iva")
                         .HasColumnType("int");
@@ -152,11 +180,17 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<int>("Origen")
-                        .HasColumnType("int");
-
                     b.Property<decimal>("PrecioVenta")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Stock")
+                        .HasColumnType("int");
 
                     b.Property<string>("UnidadMedida")
                         .HasMaxLength(50)
@@ -167,38 +201,7 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.HasIndex("Codigo")
                         .IsUnique();
 
-                    b.HasIndex("IdWorldOffice")
-                        .IsUnique()
-                        .HasFilter("[IdWorldOffice] IS NOT NULL");
-
                     b.ToTable("Productos");
-                });
-
-            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.ProductoExistencia", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Bodega")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("nvarchar(30)");
-
-                    b.Property<decimal>("Cantidad")
-                        .HasColumnType("decimal(18,4)");
-
-                    b.Property<int>("ProductoId")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProductoId", "Bodega")
-                        .IsUnique();
-
-                    b.ToTable("ProductoExistencias");
                 });
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Remision", b =>
@@ -257,14 +260,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<decimal>("Descuento")
                         .HasColumnType("decimal(18,2)");
 
-                    b.Property<string>("DocumentoWorldOffice")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.Property<string>("ErrorSincronizacionWo")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
                     b.Property<int>("EstadoEntrega")
                         .HasColumnType("int");
 
@@ -305,12 +300,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
-                    b.Property<int>("SincronizacionWo")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("SincronizadaWoEn")
-                        .HasColumnType("datetime2");
-
                     b.Property<int>("TipoEntrega")
                         .HasColumnType("int");
 
@@ -322,8 +311,6 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .IsUnique();
 
                     b.HasIndex("EstadoPago");
-
-                    b.HasIndex("SincronizacionWo");
 
                     b.ToTable("Remisiones");
                 });
@@ -407,10 +394,10 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.ToTable("Usuarios");
                 });
 
-            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.ProductoExistencia", b =>
+            modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.MovimientoInventario", b =>
                 {
                     b.HasOne("Jimaco.Remisiones.Modelo.Entidades.Producto", "Producto")
-                        .WithMany("Existencias")
+                        .WithMany("Movimientos")
                         .HasForeignKey("ProductoId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -442,7 +429,7 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Producto", b =>
                 {
-                    b.Navigation("Existencias");
+                    b.Navigation("Movimientos");
                 });
 
             modelBuilder.Entity("Jimaco.Remisiones.Modelo.Entidades.Remision", b =>

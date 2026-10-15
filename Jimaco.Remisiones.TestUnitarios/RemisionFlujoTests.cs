@@ -31,8 +31,10 @@ public class RemisionFlujoTests
         return (servicio, db, email);
     }
 
-    private static async Task<int> SembrarRemisionAsync(AppDbContext db, TipoEntrega entrega, EstadoPago estado = EstadoPago.Pendiente)
+    // El producto sembrado tiene 10 unidades; la remisión pide 2.
+    private static async Task<int> SembrarRemisionAsync(AppDbContext db, TipoEntrega entrega, EstadoPago estado = EstadoPago.Pendiente, int stock = 10)
     {
+        db.Productos.Add(new Producto { Id = 1, Codigo = "A", Nombre = "Prod", PrecioVenta = 1000, Stock = stock, FechaCreacion = DateTime.UtcNow });
         var remision = new Remision
         {
             Consecutivo = 1,
@@ -127,19 +129,6 @@ public class RemisionFlujoTests
 
         var anulada = await servicio.AnularAsync(id, new AnularRemisionDto("Cliente se arrepintió"), esAdmin: false);
         Assert.Equal(EstadoPago.Anulada, anulada!.EstadoPago);
-    }
-
-    [Fact]
-    public async Task No_se_anula_si_ya_descontó_inventario_en_wo()
-    {
-        var (servicio, db, _) = Crear();
-        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
-        var remision = await db.Remisiones.FindAsync(id);
-        remision!.SincronizacionWo = EstadoSincronizacionWo.Sincronizada;
-        await db.SaveChangesAsync();
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.AnularAsync(id, new AnularRemisionDto("x"), esAdmin: true));
-        Assert.Contains("World Office", ex.Message);
     }
 
     [Fact]

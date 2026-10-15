@@ -67,13 +67,9 @@ public class RemisionesController(IRemisionService remisionService) : Controller
     public Task<ActionResult<RemisionDetalleDto>> Entregar(int id, CancellationToken ct)
         => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.MarcarEntregadaAsync(id, ct)));
 
-    [HttpPost("{id:int}/registrada-en-wo")]
-    public Task<ActionResult<RemisionDetalleDto>> RegistradaEnWo(int id, RegistrarEnWoDto dto, CancellationToken ct)
-        => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.RegistrarEnWoAsync(id, dto, ct)));
-
     [HttpPost("{id:int}/anular")]
     public Task<ActionResult<RemisionDetalleDto>> Anular(int id, AnularRemisionDto dto, CancellationToken ct)
-        => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.AnularAsync(id, dto, User.IsInRole("Admin"), ct)));
+        => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.AnularAsync(id, dto, User.IsInRole("Admin"), NombreUsuario, ct)));
 
     private ActionResult<T> Respuesta<T>(T? valor) where T : class
         => valor is null ? NotFound() : Ok(valor);
