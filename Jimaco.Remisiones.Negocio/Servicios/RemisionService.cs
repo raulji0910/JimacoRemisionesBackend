@@ -19,9 +19,9 @@ public partial class RemisionService(
     ILogger<RemisionService> logger,
     IConfiguration? configuration = null) : IRemisionService
 {
-    // Reconoce el consecutivo formateado ("RM-00173"), con o sin prefijo y ceros a la izquierda,
+    // Reconoce el consecutivo formateado ("RMF-00173"), con o sin prefijo y ceros a la izquierda,
     // para que buscar por el número que ve el comprador también funcione.
-    [GeneratedRegex(@"^(?:rm-?)?0*(\d+)$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^(?:rmf?-?)?0*(\d+)$", RegexOptions.IgnoreCase)]
     private static partial Regex RegexConsecutivoBuscado();
 
     private static readonly CultureInfo CulturaCo = CultureInfo.GetCultureInfo("es-CO");
@@ -492,7 +492,7 @@ public partial class RemisionService(
         }
     }
 
-    internal static string Formatear(int consecutivo) => $"RM-{consecutivo:D5}";
+    internal static string Formatear(int consecutivo) => $"RMF-{consecutivo:D5}";
 
     // Productos de la remisión, rastreados para poder mover su stock.
     private async Task<Dictionary<int, Producto>> CargarProductosAsync(Remision remision, CancellationToken ct)

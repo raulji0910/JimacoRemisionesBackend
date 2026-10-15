@@ -57,7 +57,7 @@ public class StockTests
         Assert.Equal(6, mov.SaldoResultante);
         Assert.Equal(remisionId, mov.RemisionId);
         Assert.Equal("cajero", mov.Usuario);
-        Assert.Contains("RM-00007", mov.Motivo);
+        Assert.Contains("RMF-00007", mov.Motivo);
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public class StockTests
         Assert.Equal(2, pagina.Total);
         Assert.Equal(TipoMovimiento.Entrada, pagina.Items[0].Tipo);
         Assert.Equal(TipoMovimiento.Venta, pagina.Items[1].Tipo);
-        Assert.Equal("RM-00007", pagina.Items[1].RemisionConsecutivo);
+        Assert.Equal("RMF-00007", pagina.Items[1].RemisionConsecutivo);
         Assert.Null(await inventario.ListarMovimientosAsync(999, 1, 10));
     }
 
