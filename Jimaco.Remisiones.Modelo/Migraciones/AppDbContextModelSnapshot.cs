@@ -287,7 +287,7 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<string>("ReferenciaPago")
+                    b.Property<string>("ReciboRedeban")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 

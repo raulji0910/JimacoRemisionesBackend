@@ -41,6 +41,7 @@ services:
       Smtp__Usuario: ${SMTP_USUARIO:-}
       Smtp__Password: ${SMTP_PASSWORD:-}
       Smtp__RemitenteEmail: ${SMTP_REMITENTE:-}
+      Correo__Contabilidad: ${CORREO_CONTABILIDAD:-contabilidad@jimaco.com.co}
     ports:
       - "8100:8080"
 

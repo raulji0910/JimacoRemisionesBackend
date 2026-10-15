@@ -31,8 +31,8 @@ La app es **autónoma**: el inventario, los clientes y la numeración de remisio
 `Admin` (usuarios, catálogo, ajustes de stock, anular pagadas) y `Operador` (crear remisiones, cobrar, entregar). Se puede separar más adelante (cajero / admin / logística).
 
 ## Pendiente (acordado con el usuario, aún NO construido)
-1. **Recibo de Redeban obligatorio**: renombrar `ReferenciaPago` a "Número de recibo Redeban", exigirlo al marcar Pagada y mostrarlo en PDF y correo (avisar, sin bloquear, si se repite uno reciente).
-2. **Correo a `contabilidad@jimaco.com.co`** por cada remisión (cliente completo + remisión con productos + PDF). Falta definir: ¿al crear o al pagar (recomendado: al pagar), aviso al anular una pagada, y si también va copia al cliente? Destinatario configurable (`Correo:Contabilidad`).
+1. ~~Recibo Redeban~~ HECHO: `ReciboRedeban` obligatorio al pagar, en PDF y correo (falta avisar si se repite uno reciente).
+2. ~~Correo al pagar~~ HECHO: sale al cliente y a `Correo:Contabilidad` (env `CORREO_CONTABILIDAD`), con la remisión completa en el cuerpo HTML + PDF adjunto. Pendiente: aviso al anular una pagada; WhatsApp (por definir).
 3. **Datos del cliente que pide WO**: ciudad de una lista (catálogo de ciudades), responsabilidad fiscal y tipo de contribuyente; botón para exportar clientes a Excel para contabilidad. Falta el formato que use contabilidad.
 4. **Formato/prefijo y número inicial** de la numeración de remisiones.
 5. Precios de 4 productos que parecen derivados de un precio con IVA redondo (FYQ-500 = 2.450.000, FYQ-630 = 4.515.000, FYQ-1000 = 5.670.000, HS-520A = 343.000 con IVA) pero que el usuario pidió cargar **tal cual** del archivo de distribuidores (`PrecioVenta` entero): con 19 % dan 2.449.999, 4.514.998, 5.670.000 y 342.999,65. Y las referencias `YQK-70/120/300` (distribuidores) vs `TQK-…` (OC): se cargó el nombre de la OC.

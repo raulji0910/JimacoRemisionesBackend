@@ -6,6 +6,7 @@ using Jimaco.Remisiones.Modelo.Entidades;
 using Jimaco.Remisiones.Negocio.DTOs;
 using Jimaco.Remisiones.Negocio.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Jimaco.Remisiones.Negocio.Servicios;
@@ -15,7 +16,8 @@ public partial class RemisionService(
     IRemisionPdfBuilder pdfBuilder,
     IEmailSender emailSender,
     TimeProvider timeProvider,
-    ILogger<RemisionService> logger) : IRemisionService
+    ILogger<RemisionService> logger,
+    IConfiguration? configuration = null) : IRemisionService
 {
     // Reconoce el consecutivo formateado ("RM-00173"), con o sin prefijo y ceros a la izquierda,
     // para que buscar por el número que ve el comprador también funcione.
@@ -174,6 +176,9 @@ public partial class RemisionService(
         if (remision.Items.Count == 0)
             throw new InvalidOperationException("La remisión no tiene ítems.");
 
+        if (string.IsNullOrWhiteSpace(dto.ReciboRedeban))
+            throw new InvalidOperationException("Debes indicar el número de recibo de Redeban.");
+
         var ahora = timeProvider.GetUtcNow().UtcDateTime;
 
         // El stock sale en el momento del cobro. Si algún producto no alcanza, Kardex lanza y no se guarda nada.
@@ -185,7 +190,7 @@ public partial class RemisionService(
         remision.EstadoPago = EstadoPago.Pagada;
         remision.FechaPago = ahora;
         remision.PagadaPor = usuario;
-        remision.ReferenciaPago = string.IsNullOrWhiteSpace(dto.ReferenciaPago) ? null : dto.ReferenciaPago.Trim();
+        remision.ReciboRedeban = dto.ReciboRedeban.Trim();
 
         // Entrega en sitio: el producto sale en el momento del cobro. Envío: queda pendiente
         // hasta que logística lo marque como entregado.
@@ -302,16 +307,30 @@ public partial class RemisionService(
         {
             var detalle = MapDetalle(remision);
             var pdf = pdfBuilder.Generar(detalle);
+            var adjuntos = new[] { new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf") };
+            var asunto = $"Remisión {detalle.ConsecutivoFormateado} - Jimaco";
 
-            await emailSender.EnviarAsync(
-                remision.CompradorEmailSnapshot,
-                $"Remisión {detalle.ConsecutivoFormateado} - Jimaco",
-                ConstruirCuerpoCorreo(detalle),
-                [new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf")],
-                ct);
-
+            // Cliente: es el destinatario que importa; si falla, se informa y se puede reintentar.
+            await emailSender.EnviarAsync(remision.CompradorEmailSnapshot, asunto,
+                ConstruirCuerpoCorreo(detalle, paraContabilidad: false), adjuntos, ct);
             remision.CorreoEnviadoEn = timeProvider.GetUtcNow().UtcDateTime;
             await db.SaveChangesAsync(ct);
+
+            // Contabilidad: copia con los datos completos del cliente. Un fallo aquí no invalida el envío al cliente.
+            var contabilidad = configuration?["Correo:Contabilidad"];
+            if (!string.IsNullOrWhiteSpace(contabilidad))
+            {
+                try
+                {
+                    await emailSender.EnviarAsync(contabilidad.Trim(), $"[Contabilidad] {asunto} - {detalle.CompradorNombre}",
+                        ConstruirCuerpoCorreo(detalle, paraContabilidad: true), adjuntos, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Fallo enviando la copia a contabilidad de la remisión {Id}", remision.Id);
+                    return (true, "La remisión llegó al cliente, pero no se pudo enviar la copia a contabilidad. Reintenta desde el detalle.");
+                }
+            }
             return (true, null);
         }
         catch (InvalidOperationException ex)
@@ -327,21 +346,66 @@ public partial class RemisionService(
         }
     }
 
-    private static string ConstruirCuerpoCorreo(RemisionDetalleDto r)
+    // La remisión completa va en el cuerpo del correo (visible sin abrir adjuntos); el PDF va además adjunto.
+    private static string ConstruirCuerpoCorreo(RemisionDetalleDto r, bool paraContabilidad)
     {
-        var nombre = WebUtility.HtmlEncode(r.CompradorNombre);
-        var total = $"$ {r.TotalGeneral.ToString("N0", CulturaCo)}";
+        static string E(string? t) => WebUtility.HtmlEncode(t ?? "");
+        static string M(decimal v) => $"$ {v.ToString("N0", CulturaCo)}";
+        const string Td = "padding:6px;border-bottom:1px solid #eee";
+        const string Et = "padding:2px 10px 2px 0;color:#777";
+
         var entrega = r.TipoEntrega == TipoEntrega.EnSitio
-            ? "Sus productos fueron entregados en el punto de venta."
-            : "Sus productos serán despachados a la dirección indicada; le avisaremos cuando salgan.";
+            ? "Entregada en el punto de venta."
+            : "Se despachará a la dirección indicada; le avisaremos cuando salga.";
+
+        var filas = string.Concat(r.Items.Select(i =>
+            $"<tr><td style=\"{Td}\">{E(i.ProductoCodigo)}</td><td style=\"{Td}\">{E(i.ProductoNombre)}</td>" +
+            $"<td style=\"{Td};text-align:right\">{i.Cantidad}</td><td style=\"{Td};text-align:right\">{M(i.PrecioUnitario)}</td>" +
+            $"<td style=\"{Td};text-align:right\">{i.Iva}%</td><td style=\"{Td};text-align:right\">{M(i.Subtotal)}</td></tr>"));
+
+        const string Tot = "padding:2px 6px;text-align:right";
+        var ivas = string.Concat(r.IvaDesglose.Select(d =>
+            $"<tr><td style=\"{Tot}\">IVA {d.Tarifa}%</td><td style=\"{Tot}\">{M(d.Valor)}</td></tr>"));
+        var descuento = r.Descuento > 0
+            ? $"<tr><td style=\"{Tot}\">Descuento</td><td style=\"{Tot}\">- {M(r.Descuento)}</td></tr>"
+            : "";
+
+        var saludo = paraContabilidad
+            ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"
+            : $"<p>Hola <strong>{E(r.CompradorNombre)}</strong>,</p><p>Gracias por su compra. Esta es su remisión <strong>{r.ConsecutivoFormateado}</strong> (también adjunta en PDF).</p>";
+
+        var fechaPago = r.FechaPago?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CulturaCo);
 
         return $"""
-            <div style="font-family:Arial,Helvetica,sans-serif;color:#333;max-width:560px">
-              <div style="background:#1c6521;color:#fff;padding:14px 18px;font-size:18px;font-weight:bold">JIMACO</div>
+            <div style="font-family:Arial,Helvetica,sans-serif;color:#333;max-width:680px">
+              <div style="background:#1c6521;color:#fff;padding:14px 18px;font-size:18px;font-weight:bold">JIMACO · Remisión {r.ConsecutivoFormateado}</div>
               <div style="padding:18px;border:1px solid #ddd;border-top:0">
-                <p>Hola <strong>{nombre}</strong>,</p>
-                <p>Gracias por su compra. Adjuntamos la remisión <strong>{r.ConsecutivoFormateado}</strong> por un total de <strong>{total}</strong>.</p>
-                <p>{entrega}</p>
+                {saludo}
+                <table style="font-size:13px;margin-bottom:12px">
+                  <tr><td style="{Et}">Cliente</td><td>{E(r.CompradorNombre)}</td></tr>
+                  <tr><td style="{Et}">Documento</td><td>{E(r.CompradorTipoDocumento)} {E(r.CompradorDocumento)}</td></tr>
+                  <tr><td style="{Et}">Correo</td><td>{E(r.CompradorEmail)}</td></tr>
+                  <tr><td style="{Et}">Teléfono</td><td>{E(r.CompradorTelefono)}</td></tr>
+                  <tr><td style="{Et}">Ciudad</td><td>{E(r.CompradorCiudad)}</td></tr>
+                  <tr><td style="{Et}">Dirección</td><td>{E(r.CompradorDireccion)}</td></tr>
+                  <tr><td style="{Et}">Fecha de pago</td><td>{fechaPago}</td></tr>
+                  <tr><td style="{Et}">Recibo Redeban</td><td><strong>{E(r.ReciboRedeban)}</strong></td></tr>
+                  <tr><td style="{Et}">Entrega</td><td>{entrega}</td></tr>
+                </table>
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <tr style="background:#1c6521;color:#fff">
+                    <th style="padding:6px;text-align:left">Código</th><th style="padding:6px;text-align:left">Producto</th>
+                    <th style="padding:6px;text-align:right">Cant.</th><th style="padding:6px;text-align:right">Precio</th>
+                    <th style="padding:6px;text-align:right">IVA</th><th style="padding:6px;text-align:right">Subtotal</th>
+                  </tr>
+                  {filas}
+                </table>
+                <table style="margin-left:auto;margin-top:10px;font-size:13px">
+                  <tr><td style="{Tot}">Subtotal</td><td style="{Tot}">{M(r.SubtotalConDescuento)}</td></tr>
+                  {descuento}
+                  {ivas}
+                  <tr><td style="{Tot};font-weight:bold">TOTAL</td><td style="{Tot};font-weight:bold">{M(r.TotalGeneral)}</td></tr>
+                </table>
                 <p style="color:#777;font-size:12px">Este documento es una remisión de entrega y no reemplaza la factura de venta.</p>
               </div>
             </div>
@@ -457,7 +521,7 @@ public partial class RemisionService(
             r.CompradorTipoDocumentoSnapshot, r.CompradorDocumentoSnapshot, r.CompradorNombreSnapshot,
             r.CompradorDireccionSnapshot, r.CompradorCiudadSnapshot, r.CompradorTelefonoSnapshot, r.CompradorEmailSnapshot,
             r.Nota, r.FechaCreacion, r.CreadoPor,
-            r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReferenciaPago,
+            r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReciboRedeban,
             r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
             r.FechaAnulacion, r.MotivoAnulacion,
             items, calculo.SubtotalItems, r.Descuento, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);

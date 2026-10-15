@@ -64,7 +64,7 @@ public class RemisionFlujoTests
         Assert.NotNull(res);
         Assert.Equal(EstadoPago.Pagada, res.Remision.EstadoPago);
         Assert.Equal(EstadoEntrega.Entregada, res.Remision.EstadoEntrega);
-        Assert.Equal("VOUCHER-1", res.Remision.ReferenciaPago);
+        Assert.Equal("VOUCHER-1", res.Remision.ReciboRedeban);
         Assert.True(res.CorreoEnviado);
         Assert.NotNull(res.Remision.CorreoEnviadoEn);
         email.Verify(e => e.EnviarAsync("comprador@example.com", It.IsAny<string>(), It.IsAny<string>(), It.Is<IReadOnlyList<AdjuntoCorreo>?>(a => a!.Count == 1), It.IsAny<CancellationToken>()), Times.Once);
@@ -76,7 +76,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.Envio);
 
-        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(null), "cajero");
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "cajero");
 
         Assert.Equal(EstadoEntrega.Pendiente, res!.Remision.EstadoEntrega);
 
@@ -90,7 +90,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear(correoFalla: true);
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
 
-        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(null), "cajero");
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "cajero");
 
         Assert.Equal(EstadoPago.Pagada, res!.Remision.EstadoPago);
         Assert.False(res.CorreoEnviado);
@@ -104,7 +104,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(null), "x"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "x"));
     }
 
     [Fact]

@@ -124,6 +124,19 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
             ValorCelda(tabla.Cell(), r.CompradorDireccion);
             ValorCelda(tabla.Cell(), r.CompradorEmail);
             ValorCelda(tabla.Cell(), r.TipoEntrega == TipoEntrega.EnSitio ? "En el punto de venta" : "Envío posterior");
+
+            if (!string.IsNullOrWhiteSpace(r.ReciboRedeban))
+            {
+                EtiquetaCelda(tabla.Cell(), "RECIBO REDEBAN");
+                EtiquetaCelda(tabla.Cell(), "FECHA DE PAGO");
+                EtiquetaCelda(tabla.Cell(), "");
+                EtiquetaCelda(tabla.Cell(), "");
+
+                ValorCelda(tabla.Cell(), r.ReciboRedeban);
+                ValorCelda(tabla.Cell(), r.FechaPago?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CulturaMoneda));
+                ValorCelda(tabla.Cell(), "");
+                ValorCelda(tabla.Cell(), "");
+            }
         });
     }
 

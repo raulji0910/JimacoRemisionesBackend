@@ -11,7 +11,7 @@ public record RemisionGuardarDto(
     string? Nota,
     IReadOnlyList<RemisionItemEntradaDto> Items);
 
-public record MarcarPagadaDto(string? ReferenciaPago);
+public record MarcarPagadaDto(string? ReciboRedeban);
 
 public record AnularRemisionDto(string Motivo);
 
@@ -65,7 +65,7 @@ public record RemisionDetalleDto(
     EstadoPago EstadoPago,
     DateTime? FechaPago,
     string? PagadaPor,
-    string? ReferenciaPago,
+    string? ReciboRedeban,
     TipoEntrega TipoEntrega,
     EstadoEntrega EstadoEntrega,
     DateTime? FechaEntrega,

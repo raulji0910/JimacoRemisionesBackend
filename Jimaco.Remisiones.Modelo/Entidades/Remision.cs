@@ -72,7 +72,7 @@ public class Remision
 
     // Número de aprobación / voucher del datáfono, para conciliar.
     [MaxLength(100)]
-    public string? ReferenciaPago { get; set; }
+    public string? ReciboRedeban { get; set; }
 
     public TipoEntrega TipoEntrega { get; set; } = TipoEntrega.EnSitio;
 
