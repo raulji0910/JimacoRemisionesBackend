@@ -135,7 +135,7 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
         c.Dv = c.TipoDocumento == "NIT" ? DigitoVerificacion.Calcular(c.NumeroDocumento) : null;
         c.Direccion = Limpiar(dto.Direccion);
         c.Ciudad = Limpiar(dto.Ciudad);
-        c.Telefono = Limpiar(dto.Telefono);
+        c.Telefono = NormalizarCelular(dto.Telefono);
         c.Email = dto.Email.Trim();
         c.Activo = dto.Activo;
     }
@@ -154,6 +154,9 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
             throw new InvalidOperationException("El primer apellido es obligatorio.");
         if (dto.TipoPersona == TipoPersona.Juridica && dto.TipoDocumento!.Trim().ToUpperInvariant() != "NIT")
             throw new InvalidOperationException("Una persona jurídica se identifica con NIT.");
+        // El celular es obligatorio: ahí se envía la remisión por WhatsApp.
+        if (NormalizarCelular(dto.Telefono) is null)
+            throw new InvalidOperationException("El celular es obligatorio: 10 dígitos que empiezan por 3 (ahí se envía la remisión por WhatsApp).");
         // El correo es obligatorio: a ese correo se envía la remisión una vez pagada.
         if (string.IsNullOrWhiteSpace(dto.Email) || !RegexEmail().IsMatch(dto.Email.Trim()))
             throw new InvalidOperationException("El correo electrónico es obligatorio y debe ser válido (ahí se envía la remisión).");
@@ -168,6 +171,16 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
         if (guion > 0)
             texto = texto[..guion];
         return new string(texto.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+    }
+
+    // Celular colombiano: 10 dígitos que empiezan por 3 (se acepta con +57 / 57 delante). Devuelve solo los
+    // 10 dígitos, o null si no es un celular válido.
+    internal static string? NormalizarCelular(string? valor)
+    {
+        var digitos = new string((valor ?? "").Where(char.IsDigit).ToArray());
+        if (digitos.Length == 12 && digitos.StartsWith("57"))
+            digitos = digitos[2..];
+        return digitos.Length == 10 && digitos[0] == '3' ? digitos : null;
     }
 
     private static string? Limpiar(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();

@@ -54,7 +54,7 @@ public static class DatosDemo
                 NombreCompleto = "Camilo Andres Piragauta Paez",
                 Direccion = "CL 69 SUR 95A 41",
                 Ciudad = "Bogota D.C.",
-                Telefono = "32143137",
+                Telefono = "3214313700",
                 Email = "demo.natural@example.com",
                 FechaCreacion = ahora
             });
@@ -69,7 +69,7 @@ public static class DatosDemo
                 NombreCompleto = "Constructora Demo S.A.S.",
                 Direccion = "Calle 100 # 15 - 20",
                 Ciudad = "Bogota D.C.",
-                Telefono = "6015550100",
+                Telefono = "3105550100",
                 Email = "demo.juridica@example.com",
                 FechaCreacion = ahora
             });
