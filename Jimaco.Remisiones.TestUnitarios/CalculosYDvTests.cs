@@ -45,6 +45,22 @@ public class CalculosYDvTests
         Assert.Equal(3087m, r.TotalGeneral);
     }
 
+    [Fact]
+    public void Calcular_descuento_porcentual_y_retencion_reducen_la_base_antes_del_iva()
+    {
+        // Subtotal 3.000 (2.000 al 19% y 1.000 al 5%). Descuento 10% = 300 y retención 150: la base baja 450 en total,
+        // repartida 2/3 y 1/3 -> bases 1.700 y 850; IVA 323 y 42,5.
+        var descuento = RemisionCalculos.CalcularDescuento(3000m, 10m);
+        var r = RemisionCalculos.Calcular([(1000m, 2, 19), (1000m, 1, 5)], descuento, 150m);
+
+        Assert.Equal(300m, descuento);
+        Assert.Equal(2550m, r.SubtotalConDescuento);
+        Assert.Equal(1700m, r.IvaDesglose.Single(d => d.Tarifa == 19).Base);
+        Assert.Equal(323m, r.IvaDesglose.Single(d => d.Tarifa == 19).Valor);
+        Assert.Equal(42.5m, r.IvaDesglose.Single(d => d.Tarifa == 5).Valor);
+        Assert.Equal(2915.5m, r.TotalGeneral);
+    }
+
     [Theory]
     [InlineData(1500, 1000, 50)]
     [InlineData(1000, 1000, 0)]

@@ -7,7 +7,8 @@ public record RemisionItemEntradaDto(int ProductoId, int Cantidad);
 public record RemisionGuardarDto(
     int CompradorId,
     TipoEntrega TipoEntrega,
-    decimal Descuento,
+    decimal DescuentoPorcentaje,
+    decimal Retencion,
     string? Nota,
     IReadOnlyList<RemisionItemEntradaDto> Items);
 
@@ -74,13 +75,15 @@ public record RemisionDetalleDto(
     string? MotivoAnulacion,
     IReadOnlyList<RemisionItemDto> Items,
     decimal SubtotalItems,
+    decimal DescuentoPorcentaje,
     decimal Descuento,
+    decimal Retencion,
     decimal SubtotalConDescuento,
     IReadOnlyList<IvaDesgloseDto> IvaDesglose,
     decimal TotalGeneral);
 
 // Resultado de marcar como pagada: el pago nunca falla por el correo, pero se informa si el envío
 // automático no salió (ej. SMTP sin configurar) para que el operador pueda reintentar.
-public record PagarResultadoDto(RemisionDetalleDto Remision, bool CorreoEnviado, string? ErrorCorreo);
+public record PagarResultadoDto(RemisionDetalleDto Remision, bool CorreoEnviado, string? ErrorCorreo, bool CorreoEnCola = false);
 
 public record EnviarCorreoResultadoDto(RemisionDetalleDto Remision, bool CorreoEnviado, string? ErrorCorreo);

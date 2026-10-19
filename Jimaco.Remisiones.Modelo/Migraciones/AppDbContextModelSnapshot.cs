@@ -257,6 +257,9 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<decimal>("Descuento")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<decimal>("DescuentoPorcentaje")
+                        .HasColumnType("decimal(5,2)");
+
                     b.Property<int>("EstadoEntrega")
                         .HasColumnType("int");
 
@@ -290,6 +293,9 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<string>("ReciboRedeban")
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<decimal>("Retencion")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

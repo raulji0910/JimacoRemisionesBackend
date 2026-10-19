@@ -17,7 +17,8 @@ public partial class RemisionService(
     IEmailSender emailSender,
     TimeProvider timeProvider,
     ILogger<RemisionService> logger,
-    IConfiguration? configuration = null) : IRemisionService
+    IConfiguration? configuration = null,
+    ICorreoRemisionCola? cola = null) : IRemisionService
 {
     // Reconoce el consecutivo formateado ("RMF-00173"), con o sin prefijo y ceros a la izquierda,
     // para que buscar por el número que ve el comprador también funcione.
@@ -73,6 +74,7 @@ public partial class RemisionService(
                 r.CompradorDocumentoSnapshot,
                 r.FechaCreacion,
                 r.Descuento,
+                r.Retencion,
                 r.EstadoPago,
                 r.TipoEntrega,
                 r.EstadoEntrega,
@@ -85,7 +87,7 @@ public partial class RemisionService(
         // que usa el detalle, para que lista y detalle nunca difieran.
         var items = filas.Select(f =>
         {
-            var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), f.Descuento);
+            var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), f.Descuento, f.Retencion);
             return new RemisionResumenDto(
                 f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
                 f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.TipoEntrega, f.EstadoEntrega,
@@ -117,7 +119,9 @@ public partial class RemisionService(
             CompradorCiudadSnapshot = comprador.Ciudad,
             CompradorTelefonoSnapshot = comprador.Telefono,
             CompradorEmailSnapshot = comprador.Email,
-            Descuento = dto.Descuento,
+            DescuentoPorcentaje = dto.DescuentoPorcentaje,
+            Descuento = RemisionCalculos.CalcularDescuento(items.Sum(i => i.PrecioUnitario * i.Cantidad), dto.DescuentoPorcentaje),
+            Retencion = dto.Retencion,
             Nota = dto.Nota?.Trim(),
             TipoEntrega = dto.TipoEntrega,
             FechaCreacion = timeProvider.GetUtcNow().UtcDateTime,
@@ -151,7 +155,9 @@ public partial class RemisionService(
         remision.CompradorCiudadSnapshot = comprador.Ciudad;
         remision.CompradorTelefonoSnapshot = comprador.Telefono;
         remision.CompradorEmailSnapshot = comprador.Email;
-        remision.Descuento = dto.Descuento;
+        remision.DescuentoPorcentaje = dto.DescuentoPorcentaje;
+        remision.Descuento = RemisionCalculos.CalcularDescuento(items.Sum(i => i.PrecioUnitario * i.Cantidad), dto.DescuentoPorcentaje);
+        remision.Retencion = dto.Retencion;
         remision.Nota = dto.Nota?.Trim();
         remision.TipoEntrega = dto.TipoEntrega;
 
@@ -202,7 +208,14 @@ public partial class RemisionService(
 
         await db.SaveChangesAsync(ct);
 
-        // El pago ya quedó guardado; un fallo del correo nunca lo revierte.
+        // El pago ya quedó guardado; un fallo del correo nunca lo revierte. Con la cola registrada (API) el
+        // correo sale en segundo plano y el pago responde al instante; sin cola (pruebas) se envía aquí mismo.
+        if (cola is not null)
+        {
+            cola.Encolar(remision.Id);
+            return new PagarResultadoDto(MapDetalle(remision), false, null, CorreoEnCola: true);
+        }
+
         var (enviado, error) = await IntentarEnviarCorreoAsync(remision, ct);
         return new PagarResultadoDto(MapDetalle(remision), enviado, error);
     }
@@ -309,33 +322,45 @@ public partial class RemisionService(
             var pdf = pdfBuilder.Generar(detalle);
             var adjuntos = new[] { new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf") };
             var asunto = $"Remisión {detalle.ConsecutivoFormateado} - Jimaco";
+            var contabilidad = configuration?["Correo:Contabilidad"]?.Trim();
 
-            // Cliente: es el destinatario que importa; si falla, se informa y se puede reintentar.
-            await emailSender.EnviarAsync(remision.CompradorEmailSnapshot, asunto,
+            // Se envían a la vez: el servidor SMTP tarda más de un minuto en aceptar mensajes hacia correos externos
+            // (el del cliente), mientras que uno interno (contabilidad) lo acepta en menos de un segundo; en paralelo,
+            // contabilidad recibe su copia de inmediato sin esperar al del cliente.
+            var tareaCliente = emailSender.EnviarAsync(remision.CompradorEmailSnapshot, asunto,
                 ConstruirCuerpoCorreo(detalle, paraContabilidad: false), adjuntos, ct);
+            var tareaContabilidad = string.IsNullOrWhiteSpace(contabilidad)
+                ? Task.CompletedTask
+                : emailSender.EnviarAsync(contabilidad, $"[Contabilidad] {asunto} - {detalle.CompradorNombre}",
+                    ConstruirCuerpoCorreo(detalle, paraContabilidad: true), adjuntos, ct);
+
+            var errorCliente = await EsperarAsync(tareaCliente);
+            var errorContabilidad = await EsperarAsync(tareaContabilidad);
+
+            if (errorCliente is not null)
+            {
+                logger.LogError(errorCliente, "Fallo enviando el correo de la remisión {Id} al cliente", remision.Id);
+                // Errores de configuración (ej. SMTP sin configurar) traen un mensaje pensado para el usuario.
+                return (false, errorCliente is InvalidOperationException
+                    ? errorCliente.Message
+                    : "No se pudo enviar el correo. Puedes reintentarlo desde el detalle de la remisión.");
+            }
+
+            // El envío pudo tardar más de un minuto y la remisión cambiar mientras tanto (se entregó, se anuló...):
+            // se recarga antes de marcarla para no chocar con el control de concurrencia.
+            await db.Entry(remision).ReloadAsync(ct);
             remision.CorreoEnviadoEn = timeProvider.GetUtcNow().UtcDateTime;
             await db.SaveChangesAsync(ct);
 
-            // Contabilidad: copia con los datos completos del cliente. Un fallo aquí no invalida el envío al cliente.
-            var contabilidad = configuration?["Correo:Contabilidad"];
-            if (!string.IsNullOrWhiteSpace(contabilidad))
+            if (errorContabilidad is not null)
             {
-                try
-                {
-                    await emailSender.EnviarAsync(contabilidad.Trim(), $"[Contabilidad] {asunto} - {detalle.CompradorNombre}",
-                        ConstruirCuerpoCorreo(detalle, paraContabilidad: true), adjuntos, ct);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Fallo enviando la copia a contabilidad de la remisión {Id}", remision.Id);
-                    return (true, "La remisión llegó al cliente, pero no se pudo enviar la copia a contabilidad. Reintenta desde el detalle.");
-                }
+                logger.LogError(errorContabilidad, "Fallo enviando la copia a contabilidad de la remisión {Id}", remision.Id);
+                return (true, "La remisión llegó al cliente, pero no se pudo enviar la copia a contabilidad. Reintenta desde el detalle.");
             }
             return (true, null);
         }
         catch (InvalidOperationException ex)
         {
-            // Errores de configuración con mensaje pensado para el usuario (ej. SMTP sin configurar).
             logger.LogWarning(ex, "No se pudo enviar el correo de la remisión {Id}", remision.Id);
             return (false, ex.Message);
         }
@@ -343,6 +368,19 @@ public partial class RemisionService(
         {
             logger.LogError(ex, "Fallo enviando el correo de la remisión {Id}", remision.Id);
             return (false, "No se pudo enviar el correo. Puedes reintentarlo desde el detalle de la remisión.");
+        }
+    }
+
+    private static async Task<Exception?> EsperarAsync(Task tarea)
+    {
+        try
+        {
+            await tarea;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
         }
     }
 
@@ -366,9 +404,11 @@ public partial class RemisionService(
         const string Tot = "padding:2px 6px;text-align:right";
         var ivas = string.Concat(r.IvaDesglose.Select(d =>
             $"<tr><td style=\"{Tot}\">IVA {d.Tarifa}%</td><td style=\"{Tot}\">{M(d.Valor)}</td></tr>"));
-        var descuento = r.Descuento > 0
-            ? $"<tr><td style=\"{Tot}\">Descuento</td><td style=\"{Tot}\">- {M(r.Descuento)}</td></tr>"
-            : "";
+        var descuento = (r.Descuento > 0
+            ? $"<tr><td style=\"{Tot}\">Descuento ({r.DescuentoPorcentaje:0.##}%)</td><td style=\"{Tot}\">- {M(r.Descuento)}</td></tr>"
+            : "") + (r.Retencion > 0
+            ? $"<tr><td style=\"{Tot}\">Retención</td><td style=\"{Tot}\">- {M(r.Retencion)}</td></tr>"
+            : "");
 
         var saludo = paraContabilidad
             ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"
@@ -401,8 +441,9 @@ public partial class RemisionService(
                   {filas}
                 </table>
                 <table style="margin-left:auto;margin-top:10px;font-size:13px">
-                  <tr><td style="{Tot}">Subtotal</td><td style="{Tot}">{M(r.SubtotalConDescuento)}</td></tr>
+                  <tr><td style="{Tot}">Subtotal ítems</td><td style="{Tot}">{M(r.SubtotalItems)}</td></tr>
                   {descuento}
+                  <tr><td style="{Tot}">Valor antes de IVA</td><td style="{Tot}">{M(r.SubtotalConDescuento)}</td></tr>
                   {ivas}
                   <tr><td style="{Tot};font-weight:bold">TOTAL</td><td style="{Tot};font-weight:bold">{M(r.TotalGeneral)}</td></tr>
                 </table>
@@ -430,8 +471,10 @@ public partial class RemisionService(
             throw new InvalidOperationException("La remisión debe tener al menos un ítem.");
         if (dto.Items.Any(i => i.Cantidad < 1))
             throw new InvalidOperationException("La cantidad de cada ítem debe ser mayor a cero.");
-        if (dto.Descuento < 0)
-            throw new InvalidOperationException("El descuento no puede ser negativo.");
+        if (dto.DescuentoPorcentaje < 0 || dto.DescuentoPorcentaje > 50)
+            throw new InvalidOperationException("El descuento debe estar entre 0% y 50%.");
+        if (dto.Retencion < 0)
+            throw new InvalidOperationException("La retención no puede ser negativa.");
 
         var cantidades = dto.Items
             .GroupBy(i => i.ProductoId)
@@ -466,8 +509,9 @@ public partial class RemisionService(
         }
 
         var subtotal = items.Sum(i => i.PrecioUnitario * i.Cantidad);
-        if (dto.Descuento > subtotal)
-            throw new InvalidOperationException("El descuento no puede ser mayor al subtotal de la remisión.");
+        var baseConDescuento = subtotal - RemisionCalculos.CalcularDescuento(subtotal, dto.DescuentoPorcentaje);
+        if (dto.Retencion >= baseConDescuento)
+            throw new InvalidOperationException("La retención debe ser menor al valor antes de IVA (ya con el descuento).");
 
         return items;
     }
@@ -509,7 +553,7 @@ public partial class RemisionService(
     {
         // Orden estable por Id: sin esto SQL Server no garantiza el orden de la colección.
         var lineas = r.Items.OrderBy(i => i.Id).ToList();
-        var calculo = RemisionCalculos.Calcular(lineas.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), r.Descuento);
+        var calculo = RemisionCalculos.Calcular(lineas.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), r.Descuento, r.Retencion);
 
         var items = lineas.Select(i => new RemisionItemDto(
             i.Id, i.ProductoId, i.ProductoCodigoSnapshot, i.ProductoNombreSnapshot, i.PrecioUnitario, i.Iva,
@@ -524,6 +568,6 @@ public partial class RemisionService(
             r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReciboRedeban,
             r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
             r.FechaAnulacion, r.MotivoAnulacion,
-            items, calculo.SubtotalItems, r.Descuento, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);
+            items, calculo.SubtotalItems, r.DescuentoPorcentaje, r.Descuento, r.Retencion, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);
     }
 }

@@ -138,6 +138,47 @@ public class RemisionFlujoTests
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, null, [new RemisionItemEntradaDto(1, 1)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, null, [new RemisionItemEntradaDto(1, 1)])));
+    }
+
+    private static async Task SembrarCompradorAsync(AppDbContext db)
+    {
+        db.Compradores.Add(new Comprador
+        {
+            Id = 1, TipoDocumento = "CC", NumeroDocumento = "1", PrimerNombre = "A", NombreCompleto = "A", Email = "a@a.com", FechaCreacion = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(50.01, 0)]
+    [InlineData(0, -5)]
+    [InlineData(0, 999999999)]
+    public async Task Rechaza_descuento_o_retencion_fuera_de_rango(double porcentaje, double retencion)
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+        await SembrarCompradorAsync(db);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, (decimal)porcentaje, (decimal)retencion, null, [new RemisionItemEntradaDto(1, 1)])));
+        // Debe fallar por la regla de descuento/retención y no por otra cosa (comprador, stock...).
+        Assert.Matches("descuento|retenci", ex.Message.ToLowerInvariant());
+    }
+
+    [Fact]
+    public async Task Guarda_el_porcentaje_el_valor_del_descuento_y_la_retencion()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+        await SembrarCompradorAsync(db);
+
+        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 10m, 100m, null, [new RemisionItemEntradaDto(1, 2)]));
+
+        Assert.Equal(10m, r!.DescuentoPorcentaje);
+        Assert.Equal(r.SubtotalItems * 0.10m, r.Descuento);
+        Assert.Equal(100m, r.Retencion);
+        Assert.Equal(r.SubtotalItems - r.Descuento - 100m, r.SubtotalConDescuento);
     }
 }

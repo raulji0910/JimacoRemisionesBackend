@@ -18,6 +18,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUsuarioService, UsuarioService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
         services.AddScoped<IRemisionPdfBuilder, Documentos.RemisionPdfBuilder>();
+        services.AddSingleton<CorreoRemisionCola>();
+        services.AddSingleton<ICorreoRemisionCola>(sp => sp.GetRequiredService<CorreoRemisionCola>());
+        services.AddHostedService(sp => sp.GetRequiredService<CorreoRemisionCola>());
         return services;
     }
 }

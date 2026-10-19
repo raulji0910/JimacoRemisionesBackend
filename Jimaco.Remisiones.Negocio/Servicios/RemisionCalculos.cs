@@ -14,11 +14,18 @@ public record ResultadoCalculo(
 // propia base ya descontada, en vez de aplicar una sola tarifa al total.
 public static class RemisionCalculos
 {
-    public static ResultadoCalculo Calcular(IEnumerable<(decimal PrecioUnitario, int Cantidad, int Iva)> lineas, decimal descuento)
+    // Descuento en pesos que resulta de aplicar el % sobre el valor antes de IVA.
+    public static decimal CalcularDescuento(decimal subtotalItems, decimal porcentaje)
+        => Math.Round(subtotalItems * porcentaje / 100m, 2);
+
+    // `retencion` (pesos, opcional) se resta del valor antes de IVA igual que el descuento: ambos reducen la
+    // base sobre la que se calcula el IVA, repartidos entre las tarifas según su participación.
+    public static ResultadoCalculo Calcular(IEnumerable<(decimal PrecioUnitario, int Cantidad, int Iva)> lineas, decimal descuento, decimal retencion = 0m)
     {
+        var reduccion = descuento + retencion;
         var lista = lineas.ToList();
         var subtotalItems = lista.Sum(l => l.PrecioUnitario * l.Cantidad);
-        var subtotalConDescuento = subtotalItems - descuento;
+        var subtotalConDescuento = subtotalItems - reduccion;
 
         var ivaDesglose = lista
             .GroupBy(l => l.Iva)
@@ -27,7 +34,7 @@ public static class RemisionCalculos
             {
                 var subtotalGrupo = g.Sum(l => l.PrecioUnitario * l.Cantidad);
                 var proporcion = subtotalItems > 0 ? subtotalGrupo / subtotalItems : 0;
-                var baseGravable = Math.Round(subtotalGrupo - (descuento * proporcion), 2);
+                var baseGravable = Math.Round(subtotalGrupo - (reduccion * proporcion), 2);
                 var valorIva = Math.Round(baseGravable * g.Key / 100m, 2);
                 return new IvaDesgloseDto(g.Key, baseGravable, valorIva);
             })

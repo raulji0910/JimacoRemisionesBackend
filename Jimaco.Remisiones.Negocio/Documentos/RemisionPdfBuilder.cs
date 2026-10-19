@@ -220,10 +220,11 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
             {
                 FilaTotal(col, "Subtotal ítems", remision.SubtotalItems);
                 if (remision.Descuento > 0)
-                {
-                    FilaTotal(col, "Descuento", -remision.Descuento);
-                    FilaTotal(col, "Subtotal", remision.SubtotalConDescuento);
-                }
+                    FilaTotal(col, $"Descuento ({remision.DescuentoPorcentaje:0.##}%)", -remision.Descuento);
+                if (remision.Retencion > 0)
+                    FilaTotal(col, "Retención", -remision.Retencion);
+                if (remision.Descuento > 0 || remision.Retencion > 0)
+                    FilaTotal(col, "Valor antes de IVA", remision.SubtotalConDescuento);
 
                 foreach (var tramo in remision.IvaDesglose)
                     FilaTotal(col, $"IVA ({tramo.Tarifa}%)", tramo.Valor);
