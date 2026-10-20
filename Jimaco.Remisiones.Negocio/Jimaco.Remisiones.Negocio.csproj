@@ -8,6 +8,7 @@
     <!-- Logo embebido en el ensamblado (no depende de que un archivo suelto se copie bien al
          contenedor) — lo carga CotizacionPdfBuilder vía Assembly.GetManifestResourceStream. -->
     <EmbeddedResource Include="Documentos\Assets\logo-jimaco.png" />
+    <EmbeddedResource Include="Datos\municipios-dane.json" />
   </ItemGroup>
 
   <ItemGroup>

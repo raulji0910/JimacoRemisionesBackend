@@ -134,7 +134,10 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
 
         c.Dv = c.TipoDocumento == "NIT" ? DigitoVerificacion.Calcular(c.NumeroDocumento) : null;
         c.Direccion = Limpiar(dto.Direccion);
-        c.Ciudad = Limpiar(dto.Ciudad);
+        // La ciudad se completa desde el código DANE (ya validado): no se acepta texto libre.
+        var municipio = MunicipiosDane.PorCodigo(dto.CiudadCodigoDane)!;
+        c.Ciudad = municipio.Etiqueta;
+        c.CiudadCodigoDane = municipio.Codigo;
         c.Telefono = NormalizarCelular(dto.Telefono);
         c.Email = dto.Email.Trim();
         c.Activo = dto.Activo;
@@ -154,6 +157,9 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
             throw new InvalidOperationException("El primer apellido es obligatorio.");
         if (dto.TipoPersona == TipoPersona.Juridica && dto.TipoDocumento!.Trim().ToUpperInvariant() != "NIT")
             throw new InvalidOperationException("Una persona jurídica se identifica con NIT.");
+        // La ciudad es obligatoria y debe ser un municipio del DANE (se elige de una lista, no se escribe).
+        if (MunicipiosDane.PorCodigo(dto.CiudadCodigoDane) is null)
+            throw new InvalidOperationException("La ciudad es obligatoria: elige un municipio de la lista del DANE.");
         // El celular es obligatorio: ahí se envía la remisión por WhatsApp.
         if (NormalizarCelular(dto.Telefono) is null)
             throw new InvalidOperationException("El celular es obligatorio: 10 dígitos que empiezan por 3 (ahí se envía la remisión por WhatsApp).");
@@ -188,7 +194,7 @@ public partial class CompradorService(AppDbContext db, TimeProvider timeProvider
     // Expresión traducible a SQL (para Select dentro de queries).
     private static CompradorDto Proyectar(Comprador c) => new(
         c.Id, c.TipoPersona, c.TipoDocumento, c.NumeroDocumento, c.Dv, c.PrimerNombre, c.SegundoNombre,
-        c.PrimerApellido, c.SegundoApellido, c.NombreCompleto, c.Direccion, c.Ciudad, c.Telefono, c.Email, c.Activo);
+        c.PrimerApellido, c.SegundoApellido, c.NombreCompleto, c.Direccion, c.Ciudad, c.CiudadCodigoDane, c.Telefono, c.Email, c.Activo);
 
     private static CompradorDto ProyectarEnMemoria(Comprador c) => Proyectar(c);
 }

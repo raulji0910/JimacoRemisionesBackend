@@ -49,8 +49,13 @@ public class Comprador
     [MaxLength(300)]
     public string? Direccion { get; set; }
 
+    // Texto de la ciudad ("MEDELLÍN, ANTIOQUIA"), completado por el servidor desde el código DANE.
     [MaxLength(100)]
     public string? Ciudad { get; set; }
+
+    // Código DANE (Divipola) del municipio, 5 dígitos. Lo elige el usuario de una lista; nunca se escribe a mano.
+    [MaxLength(5)]
+    public string? CiudadCodigoDane { get; set; }
 
     [MaxLength(50)]
     public string? Telefono { get; set; }

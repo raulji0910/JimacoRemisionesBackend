@@ -73,4 +73,18 @@ public class CalculosYDvTests
         Assert.Null(RemisionCalculos.MargenPorcentaje(1000, null));
         Assert.Null(RemisionCalculos.MargenPorcentaje(1000, 0));
     }
+
+    [Fact]
+    public void Municipios_dane_trae_el_listado_oficial_completo()
+    {
+        Assert.Equal(1122, MunicipiosDane.Todos.Count);
+        Assert.Equal(1122, MunicipiosDane.Todos.Select(m => m.Codigo).Distinct().Count());
+        Assert.All(MunicipiosDane.Todos, m => Assert.Matches(@"^\d{5}$", m.Codigo));
+
+        Assert.Equal("BOGOTÁ, D.C.", MunicipiosDane.PorCodigo("11001")!.Etiqueta);
+        Assert.Equal("MEDELLÍN, ANTIOQUIA", MunicipiosDane.PorCodigo("05001")!.Etiqueta);
+        Assert.Equal("SANTIAGO DE CALI, VALLE DEL CAUCA", MunicipiosDane.PorCodigo("76001")!.Etiqueta);
+        Assert.Null(MunicipiosDane.PorCodigo("99999"));
+        Assert.Null(MunicipiosDane.PorCodigo("Bogota"));
+    }
 }

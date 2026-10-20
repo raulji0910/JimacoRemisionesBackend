@@ -15,6 +15,7 @@ public record CompradorDto(
     string NombreCompleto,
     string? Direccion,
     string? Ciudad,
+    string? CiudadCodigoDane,
     string? Telefono,
     string Email,
     bool Activo);
@@ -29,7 +30,7 @@ public record CompradorGuardarDto(
     string? PrimerApellido,
     string? SegundoApellido,
     string? Direccion,
-    string? Ciudad,
+    string? CiudadCodigoDane,
     string? Telefono,
     string Email,
     bool Activo = true);
