@@ -12,7 +12,7 @@ public record RemisionGuardarDto(
     string? Nota,
     IReadOnlyList<RemisionItemEntradaDto> Items);
 
-public record MarcarPagadaDto(string? ReciboRedeban);
+public record MarcarPagadaDto(MedioPago MedioPago, string? ReciboRedeban);
 
 public record AnularRemisionDto(string Motivo);
 
@@ -44,6 +44,7 @@ public record RemisionResumenDto(
     DateTime FechaCreacion,
     decimal Total,
     EstadoPago EstadoPago,
+    MedioPago? MedioPago,
     TipoEntrega TipoEntrega,
     EstadoEntrega EstadoEntrega,
     bool CorreoEnviado);
@@ -67,6 +68,7 @@ public record RemisionDetalleDto(
     DateTime? FechaPago,
     string? PagadaPor,
     string? ReciboRedeban,
+    MedioPago? MedioPago,
     TipoEntrega TipoEntrega,
     EstadoEntrega EstadoEntrega,
     DateTime? FechaEntrega,

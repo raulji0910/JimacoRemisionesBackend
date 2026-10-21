@@ -48,7 +48,7 @@ public class StockTests
     {
         var (db, servicio, remisionId, productoId) = await Escenario(stock: 10, cantidad: 4);
 
-        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto("R-1"), "cajero");
+        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero");
 
         Assert.Equal(6, (await db.Productos.FindAsync(productoId))!.Stock);
         var mov = await db.MovimientosInventario.SingleAsync();
@@ -65,7 +65,7 @@ public class StockTests
     {
         var (db, servicio, remisionId, productoId) = await Escenario(stock: 3, cantidad: 4);
 
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto("R-1"), "cajero"));
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero"));
 
         Assert.Contains("Stock insuficiente", ex.Message);
         Assert.Equal(3, (await db.Productos.FindAsync(productoId))!.Stock);
@@ -77,7 +77,7 @@ public class StockTests
     public async Task Anular_una_remision_pagada_devuelve_el_stock()
     {
         var (db, servicio, remisionId, productoId) = await Escenario(stock: 10, cantidad: 4);
-        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto("R-1"), "cajero");
+        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero");
 
         await servicio.AnularAsync(remisionId, new AnularRemisionDto("Cobro duplicado"), esAdmin: true, usuario: "admin");
 
@@ -198,7 +198,7 @@ public class StockTests
     public async Task El_kardex_se_lista_del_mas_reciente_al_mas_antiguo_con_el_consecutivo_de_la_remision()
     {
         var (db, servicio, remisionId, productoId) = await Escenario(stock: 10, cantidad: 2);
-        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto("R-1"), "cajero");
+        await servicio.MarcarPagadaAsync(remisionId, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero");
         var inventario = new InventarioService(db, TimeProvider.System);
         await inventario.RegistrarMovimientoAsync(productoId, new MovimientoManualDto(TipoMovimiento.Entrada, 3, "Llegó pedido"), "admin");
 

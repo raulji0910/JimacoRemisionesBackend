@@ -76,6 +76,7 @@ public partial class RemisionService(
                 r.Descuento,
                 r.Retencion,
                 r.EstadoPago,
+                r.MedioPago,
                 r.TipoEntrega,
                 r.EstadoEntrega,
                 r.CorreoEnviadoEn,
@@ -90,7 +91,7 @@ public partial class RemisionService(
             var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), f.Descuento, f.Retencion);
             return new RemisionResumenDto(
                 f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
-                f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.TipoEntrega, f.EstadoEntrega,
+                f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.MedioPago, f.TipoEntrega, f.EstadoEntrega,
                 f.CorreoEnviadoEn is not null);
         }).ToList();
 
@@ -182,7 +183,10 @@ public partial class RemisionService(
         if (remision.Items.Count == 0)
             throw new InvalidOperationException("La remisión no tiene ítems.");
 
-        if (string.IsNullOrWhiteSpace(dto.ReciboRedeban))
+        if (!Enum.IsDefined(dto.MedioPago))
+            throw new InvalidOperationException("El medio de pago no es válido.");
+        // Datáfono y QR pasan por el datáfono Redeban: llevan número de recibo. Efectivo no lleva ninguno.
+        if (dto.MedioPago != MedioPago.Efectivo && string.IsNullOrWhiteSpace(dto.ReciboRedeban))
             throw new InvalidOperationException("Debes indicar el número de recibo de Redeban.");
 
         var ahora = timeProvider.GetUtcNow().UtcDateTime;
@@ -196,7 +200,8 @@ public partial class RemisionService(
         remision.EstadoPago = EstadoPago.Pagada;
         remision.FechaPago = ahora;
         remision.PagadaPor = usuario;
-        remision.ReciboRedeban = dto.ReciboRedeban.Trim();
+        remision.MedioPago = dto.MedioPago;
+        remision.ReciboRedeban = dto.MedioPago == MedioPago.Efectivo ? null : dto.ReciboRedeban!.Trim();
 
         // Entrega en sitio: el producto sale en el momento del cobro. Envío: queda pendiente
         // hasta que logística lo marque como entregado.
@@ -371,6 +376,14 @@ public partial class RemisionService(
         }
     }
 
+    internal static string NombreMedioPago(MedioPago? medio) => medio switch
+    {
+        MedioPago.Datafono => "Datáfono",
+        MedioPago.Qr => "Pago con QR",
+        MedioPago.Efectivo => "Efectivo",
+        _ => "—"
+    };
+
     private static async Task<Exception?> EsperarAsync(Task tarea)
     {
         try
@@ -414,6 +427,9 @@ public partial class RemisionService(
             ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"
             : $"<p>Hola <strong>{E(r.CompradorNombre)}</strong>,</p><p>Gracias por su compra. Esta es su remisión <strong>{r.ConsecutivoFormateado}</strong> (también adjunta en PDF).</p>";
 
+        var reciboFila = string.IsNullOrWhiteSpace(r.ReciboRedeban)
+            ? ""
+            : $"<tr><td style=\"{Et}\">Recibo Redeban</td><td><strong>{E(r.ReciboRedeban)}</strong></td></tr>";
         var fechaPago = r.FechaPago?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CulturaCo);
 
         return $"""
@@ -429,7 +445,8 @@ public partial class RemisionService(
                   <tr><td style="{Et}">Ciudad</td><td>{E(r.CompradorCiudad)}</td></tr>
                   <tr><td style="{Et}">Dirección</td><td>{E(r.CompradorDireccion)}</td></tr>
                   <tr><td style="{Et}">Fecha de pago</td><td>{fechaPago}</td></tr>
-                  <tr><td style="{Et}">Recibo Redeban</td><td><strong>{E(r.ReciboRedeban)}</strong></td></tr>
+                  <tr><td style="{Et}">Medio de pago</td><td><strong>{NombreMedioPago(r.MedioPago)}</strong></td></tr>
+                  {reciboFila}
                   <tr><td style="{Et}">Entrega</td><td>{entrega}</td></tr>
                 </table>
                 <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -565,7 +582,7 @@ public partial class RemisionService(
             r.CompradorTipoDocumentoSnapshot, r.CompradorDocumentoSnapshot, r.CompradorNombreSnapshot,
             r.CompradorDireccionSnapshot, r.CompradorCiudadSnapshot, r.CompradorTelefonoSnapshot, r.CompradorEmailSnapshot,
             r.Nota, r.FechaCreacion, r.CreadoPor,
-            r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReciboRedeban,
+            r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReciboRedeban, r.MedioPago,
             r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
             r.FechaAnulacion, r.MotivoAnulacion,
             items, calculo.SubtotalItems, r.DescuentoPorcentaje, r.Descuento, r.Retencion, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);

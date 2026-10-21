@@ -3,6 +3,15 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Jimaco.Remisiones.Modelo.Entidades;
 
+// Cómo se cobró. Datáfono y QR pasan por el mismo datáfono Redeban (ambos llevan número de recibo);
+// Efectivo solo se marca como pagado en efectivo.
+public enum MedioPago
+{
+    Datafono = 1,
+    Qr = 2,
+    Efectivo = 3
+}
+
 public enum EstadoPago
 {
     Pendiente = 1,
@@ -81,6 +90,9 @@ public class Remision
     // Número de aprobación / voucher del datáfono, para conciliar.
     [MaxLength(100)]
     public string? ReciboRedeban { get; set; }
+
+    // Se fija al cobrar; null mientras la remisión está pendiente.
+    public MedioPago? MedioPago { get; set; }
 
     public TipoEntrega TipoEntrega { get; set; } = TipoEntrega.EnSitio;
 

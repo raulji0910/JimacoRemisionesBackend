@@ -59,7 +59,7 @@ public class RemisionFlujoTests
         var (servicio, db, email) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
 
-        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("VOUCHER-1"), "cajero");
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(MedioPago.Datafono, "VOUCHER-1"), "cajero");
 
         Assert.NotNull(res);
         Assert.Equal(EstadoPago.Pagada, res.Remision.EstadoPago);
@@ -76,7 +76,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.Envio);
 
-        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "cajero");
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero");
 
         Assert.Equal(EstadoEntrega.Pendiente, res!.Remision.EstadoEntrega);
 
@@ -90,7 +90,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear(correoFalla: true);
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
 
-        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "cajero");
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "cajero");
 
         Assert.Equal(EstadoPago.Pagada, res!.Remision.EstadoPago);
         Assert.False(res.CorreoEnviado);
@@ -104,7 +104,7 @@ public class RemisionFlujoTests
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(id, new MarcarPagadaDto("R-1"), "x"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(MedioPago.Datafono, "R-1"), "x"));
     }
 
     [Fact]
@@ -180,5 +180,68 @@ public class RemisionFlujoTests
         Assert.Equal(r.SubtotalItems * 0.10m, r.Descuento);
         Assert.Equal(100m, r.Retencion);
         Assert.Equal(r.SubtotalItems - r.Descuento - 100m, r.SubtotalConDescuento);
+    }
+
+    [Fact]
+    public async Task Pagar_en_efectivo_no_pide_recibo_y_queda_registrado()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
+
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(MedioPago.Efectivo, "ignorado"), "cajero");
+
+        Assert.Equal(MedioPago.Efectivo, res!.Remision.MedioPago);
+        Assert.Null(res.Remision.ReciboRedeban);
+        Assert.Equal(EstadoPago.Pagada, res.Remision.EstadoPago);
+    }
+
+    [Theory]
+    [InlineData(MedioPago.Datafono)]
+    [InlineData(MedioPago.Qr)]
+    public async Task Datafono_y_qr_exigen_numero_de_recibo(MedioPago medio)
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(medio, "  "), "cajero"));
+        var res = await servicio.MarcarPagadaAsync(id, new MarcarPagadaDto(medio, "A-123"), "cajero");
+
+        Assert.Equal(medio, res!.Remision.MedioPago);
+        Assert.Equal("A-123", res.Remision.ReciboRedeban);
+    }
+
+    [Fact]
+    public async Task Cierre_de_caja_suma_por_medio_y_resta_las_devoluciones()
+    {
+        var (_, db, _) = Crear();
+        db.Productos.Add(new Producto { Id = 1, Codigo = "A", Nombre = "Prod", PrecioVenta = 1000, Stock = 10, FechaCreacion = DateTime.UtcNow });
+        // Hoy (hora de Colombia) a las 10:00 = 15:00 UTC; ayer a las 10:00 queda fuera del día consultado.
+        var dia = new DateOnly(2026, 10, 20);
+        var hoy = new DateTime(2026, 10, 20, 15, 0, 0, DateTimeKind.Utc);
+        Remision Nueva(int n, MedioPago medio, DateTime pago, EstadoPago estado = EstadoPago.Pagada, DateTime? anulada = null) => new()
+        {
+            Consecutivo = n, CompradorId = 1, CompradorTipoDocumentoSnapshot = "CC", CompradorDocumentoSnapshot = "1",
+            CompradorNombreSnapshot = "C", CompradorEmailSnapshot = "c@c.co", EstadoPago = estado, MedioPago = medio,
+            FechaPago = pago, FechaAnulacion = anulada, FechaCreacion = pago, ReciboRedeban = medio == MedioPago.Efectivo ? null : "R",
+            Items = [new RemisionItem { ProductoId = 1, ProductoCodigoSnapshot = "A", ProductoNombreSnapshot = "P", PrecioUnitario = 1000, Iva = 0, Cantidad = n }]
+        };
+        db.Remisiones.AddRange(
+            Nueva(1, MedioPago.Datafono, hoy),                                        // 1.000
+            Nueva(2, MedioPago.Efectivo, hoy),                                        // 2.000
+            Nueva(3, MedioPago.Efectivo, hoy, EstadoPago.Anulada, hoy.AddHours(1)),   // 3.000 cobrado y devuelto el mismo día
+            Nueva(4, MedioPago.Qr, hoy.AddDays(-1)),                                  // ayer: no entra
+            Nueva(5, MedioPago.Qr, hoy.AddDays(-1), EstadoPago.Anulada, hoy));        // cobrada ayer, devuelta hoy: 5.000 de devolución
+        await db.SaveChangesAsync();
+
+        var cierre = await new CierreCajaService(db).ObtenerAsync(dia);
+
+        Assert.Equal(6000m, cierre.TotalCobros);          // 1.000 + 2.000 + 3.000
+        Assert.Equal(8000m, cierre.TotalDevoluciones);    // 3.000 + 5.000
+        Assert.Equal(-2000m, cierre.Neto);
+        Assert.Equal(1000m, cierre.PorMedio.Single(m => m.Medio == MedioPago.Datafono).Neto);
+        Assert.Equal(2000m + 3000m - 3000m, cierre.PorMedio.Single(m => m.Medio == MedioPago.Efectivo).Neto);
+        Assert.Equal(-5000m, cierre.PorMedio.Single(m => m.Medio == MedioPago.Qr).Neto);
+        Assert.Equal(3, cierre.Cobros.Count);
+        Assert.Equal(2, cierre.Devoluciones.Count);
     }
 }

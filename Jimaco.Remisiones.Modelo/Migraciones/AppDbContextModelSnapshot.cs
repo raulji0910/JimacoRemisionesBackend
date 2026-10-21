@@ -282,6 +282,9 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                     b.Property<DateTime?>("FechaPago")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("MedioPago")
+                        .HasColumnType("int");
+
                     b.Property<string>("MotivoAnulacion")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");

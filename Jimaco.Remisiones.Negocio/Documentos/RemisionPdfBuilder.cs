@@ -125,16 +125,16 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
             ValorCelda(tabla.Cell(), r.CompradorEmail);
             ValorCelda(tabla.Cell(), r.TipoEntrega == TipoEntrega.EnSitio ? "En el punto de venta" : "Envío posterior");
 
-            if (!string.IsNullOrWhiteSpace(r.ReciboRedeban))
+            if (r.FechaPago is not null)
             {
-                EtiquetaCelda(tabla.Cell(), "RECIBO REDEBAN");
+                EtiquetaCelda(tabla.Cell(), "MEDIO DE PAGO");
+                EtiquetaCelda(tabla.Cell(), string.IsNullOrWhiteSpace(r.ReciboRedeban) ? "" : "RECIBO REDEBAN");
                 EtiquetaCelda(tabla.Cell(), "FECHA DE PAGO");
                 EtiquetaCelda(tabla.Cell(), "");
-                EtiquetaCelda(tabla.Cell(), "");
 
+                ValorCelda(tabla.Cell(), Servicios.RemisionService.NombreMedioPago(r.MedioPago));
                 ValorCelda(tabla.Cell(), r.ReciboRedeban);
                 ValorCelda(tabla.Cell(), r.FechaPago?.ToLocalTime().ToString("dd/MM/yyyy HH:mm", CulturaMoneda));
-                ValorCelda(tabla.Cell(), "");
                 ValorCelda(tabla.Cell(), "");
             }
         });
