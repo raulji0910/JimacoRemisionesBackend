@@ -22,12 +22,17 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
 
     private static readonly CultureInfo CulturaMoneda = CultureInfo.GetCultureInfo("es-CO");
 
-    private static readonly string[] Observaciones =
-    [
-        "Revise cuidadosamente su mercancía al recibirla.",
-        "Material cortado o fabricado no tiene devolución, ni cambio.",
-        "Esta remisión es un documento de entrega y no reemplaza la factura de venta."
-    ];
+    // Observaciones fijas de toda remisión: política de devolución de Jimaco (texto aprobado por la empresa).
+    private const string PoliticaTitulo = "POLÍTICA DE DEVOLUCIÓN DE MERCANCÍA Y DINERO";
+
+    private const string PoliticaTexto =
+        "Toda solicitud de devolución deberá presentarse dentro de los cinco (5) días hábiles siguientes a la entrega de la mercancía, " +
+        "a través del correo electrónico contabilidad@jimaco.com.co o del asesor comercial responsable, indicando el motivo y la factura " +
+        "correspondiente. La mercancía deberá estar sin uso, completa, en buen estado y con su empaque original en condiciones aptas para " +
+        "su comercialización. Toda devolución estará sujeta a revisión y aprobación previa. Los reembolsos aprobados se efectuarán " +
+        "exclusivamente mediante transferencia bancaria, en un plazo máximo de ocho (8) días hábiles contados a partir de la aprobación " +
+        "de la devolución. No se realizan devoluciones de dinero en efectivo. Estos plazos no limitan los derechos legales del consumidor " +
+        "cuando sean aplicables.";
 
     private static readonly byte[] LogoBytes = CargarLogo();
 
@@ -217,8 +222,8 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                 col.Item().Background(VerdeMarca).Padding(5).Text("Observaciones").FontColor(Colors.White).Bold();
                 col.Item().PaddingTop(5).Column(obs =>
                 {
-                    foreach (var texto in Observaciones)
-                        obs.Item().Text($"* {texto}").FontSize(7.5f);
+                    obs.Item().Text(PoliticaTitulo).FontSize(7.5f).Bold();
+                    obs.Item().PaddingTop(2).Text(PoliticaTexto).FontSize(7.5f).Justify();
 
                     if (!string.IsNullOrWhiteSpace(remision.Nota))
                         obs.Item().PaddingTop(3).Text(remision.TipoEntrega == TipoEntrega.Envio
