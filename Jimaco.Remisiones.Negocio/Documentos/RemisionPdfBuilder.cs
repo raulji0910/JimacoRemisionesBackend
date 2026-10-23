@@ -27,7 +27,7 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
 
     private const string PoliticaTexto =
         "Toda solicitud de devolución deberá presentarse dentro de los cinco (5) días hábiles siguientes a la entrega de la mercancía, " +
-        "a través del correo electrónico contabilidad@jimaco.com.co o del asesor comercial responsable, indicando el motivo y la factura " +
+        "a través del correo electrónico contabilidad@jimaco.com.co o del asesor comercial responsable, indicando el motivo y la remisión " +
         "correspondiente. La mercancía deberá estar sin uso, completa, en buen estado y con su empaque original en condiciones aptas para " +
         "su comercialización. Toda devolución estará sujeta a revisión y aprobación previa. Los reembolsos aprobados se efectuarán " +
         "exclusivamente mediante transferencia bancaria, en un plazo máximo de ocho (8) días hábiles contados a partir de la aprobación " +
