@@ -65,20 +65,23 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
         {
             col.Item().Row(row =>
             {
-                // El logo ya trae el nombre: va grande y solo se le agregan debajo los datos de la empresa (sin repetir el nombre).
-                row.RelativeItem().Column(datos =>
+                // El logo ya trae el nombre: va con un tamaño moderado y los datos de la empresa quedan centrados justo debajo
+                // (sin repetir el nombre), en una columna del mismo ancho del logo para que se vean como un solo bloque.
+                row.ConstantItem(165).Column(datos =>
                 {
-                    datos.Item().Width(210).Image(LogoBytes).FitWidth();
-                    datos.Item().PaddingTop(4).Column(texto =>
+                    datos.Item().Image(LogoBytes).FitWidth();
+                    datos.Item().PaddingTop(1).AlignCenter().Column(texto =>
                     {
                         if (!string.IsNullOrWhiteSpace(empresa.Nit))
-                            texto.Item().Text($"NIT {empresa.Nit}").FontSize(9).Bold();
+                            texto.Item().AlignCenter().Text($"NIT {empresa.Nit}").FontSize(9).Bold();
                         if (!string.IsNullOrWhiteSpace(empresa.Direccion))
-                            texto.Item().Text(empresa.Direccion).FontSize(9);
+                            texto.Item().AlignCenter().Text(empresa.Direccion).FontSize(9);
                         if (!string.IsNullOrWhiteSpace(empresa.Ciudad))
-                            texto.Item().Text(empresa.Ciudad).FontSize(9);
+                            texto.Item().AlignCenter().Text(empresa.Ciudad).FontSize(9);
                     });
                 });
+
+                row.RelativeItem();
 
                 row.ConstantItem(150).Column(badge =>
                 {
