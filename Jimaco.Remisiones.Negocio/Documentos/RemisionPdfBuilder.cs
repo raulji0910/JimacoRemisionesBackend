@@ -154,6 +154,9 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
 
     private static void ComponerTablaItems(IContainer container, RemisionDetalleDto remision)
     {
+        // La columna de descuento solo aparece si alguna línea lo tiene (los descuentos son por ítem).
+        var hayDescuentos = remision.Items.Any(i => i.Descuento > 0);
+
         container.Table(tabla =>
         {
             tabla.ColumnsDefinition(columnas =>
@@ -164,6 +167,8 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                 columnas.RelativeColumn(1.1f);
                 columnas.RelativeColumn(1.8f);
                 columnas.RelativeColumn(1f);
+                if (hayDescuentos)
+                    columnas.RelativeColumn(1.1f);
                 columnas.RelativeColumn(1.9f);
             });
 
@@ -175,6 +180,8 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                 EncabezadoItemCelda(header.Cell(), "Cant.");
                 EncabezadoItemCelda(header.Cell(), "Valor unitario");
                 EncabezadoItemCelda(header.Cell(), "IVA");
+                if (hayDescuentos)
+                    EncabezadoItemCelda(header.Cell(), "Desc.");
                 EncabezadoItemCelda(header.Cell(), "Valor total");
             });
 
@@ -189,7 +196,9 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                 FilaItemCelda(tabla.Cell(), fondo, item.Cantidad.ToString(CulturaMoneda), true);
                 FilaItemCelda(tabla.Cell(), fondo, FormatearMoneda(item.PrecioUnitario), true);
                 FilaItemCelda(tabla.Cell(), fondo, item.Iva > 0 ? $"{item.Iva}%" : "0%", true);
-                FilaItemCelda(tabla.Cell(), fondo, FormatearMoneda(item.Subtotal), true);
+                if (hayDescuentos)
+                    FilaItemCelda(tabla.Cell(), fondo, item.DescuentoPorcentaje > 0 ? $"{item.DescuentoPorcentaje:0.##}%" : "—", true);
+                FilaItemCelda(tabla.Cell(), fondo, FormatearMoneda(item.SubtotalNeto), true);
             }
         });
     }
@@ -220,18 +229,29 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
             {
                 FilaTotal(col, "Subtotal ítems", remision.SubtotalItems);
                 if (remision.Descuento > 0)
-                    FilaTotal(col, $"Descuento ({remision.DescuentoPorcentaje:0.##}%)", -remision.Descuento);
-                if (remision.Retencion > 0)
-                    FilaTotal(col, "Retención", -remision.Retencion);
-                if (remision.Descuento > 0 || remision.Retencion > 0)
+                    FilaTotal(col, "Descuentos", -remision.Descuento);
+                if (remision.Descuento > 0)
                     FilaTotal(col, "Valor antes de IVA", remision.SubtotalConDescuento);
 
                 foreach (var tramo in remision.IvaDesglose)
                     FilaTotal(col, $"IVA ({tramo.Tarifa}%)", tramo.Valor);
 
+                // Retenciones (las practica el comprador): no cambian el IVA, solo el total a pagar.
+                var hayRetenciones = remision.ReteFuente > 0 || remision.ReteIca > 0 || remision.ReteIva > 0;
+                if (hayRetenciones)
+                {
+                    FilaTotal(col, "Total antes de retenciones", remision.TotalBruto);
+                    if (remision.ReteFuente > 0)
+                        FilaTotal(col, $"ReteFuente ({remision.ReteFuentePorcentaje:0.##}%)", -remision.ReteFuente);
+                    if (remision.ReteIca > 0)
+                        FilaTotal(col, $"ReteICA ({remision.ReteIcaPorMil:0.###}‰)", -remision.ReteIca);
+                    if (remision.ReteIva > 0)
+                        FilaTotal(col, $"ReteIVA ({remision.ReteIvaPorcentaje:0.##}% del IVA)", -remision.ReteIva);
+                }
+
                 col.Item().PaddingTop(4).Background(VerdeMarca).Padding(8).Row(total =>
                 {
-                    total.RelativeItem().Text("TOTAL").FontColor(Colors.White).Bold().FontSize(12);
+                    total.RelativeItem().Text(hayRetenciones ? "TOTAL A PAGAR" : "TOTAL").FontColor(Colors.White).Bold().FontSize(12);
                     total.RelativeItem().AlignRight().Text(FormatearMoneda(remision.TotalGeneral)).FontColor(Colors.White).Bold().FontSize(12);
                 });
             });

@@ -30,4 +30,8 @@ public class RemisionItem
     public int Iva { get; set; }
 
     public int Cantidad { get; set; } = 1;
+
+    // Descuento de esta línea: % (0-50) sobre su valor antes de IVA. No hay descuento general en la remisión.
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DescuentoPorcentaje { get; set; }
 }

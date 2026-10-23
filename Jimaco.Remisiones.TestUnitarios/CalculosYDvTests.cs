@@ -16,12 +16,13 @@ public class CalculosYDvTests
     {
         var r = RemisionCalculos.Calcular(
         [
-            (1000m, 2, 19),  // 2.000 al 19%
-            (500m, 2, 5),    // 1.000 al 5%
-            (300m, 1, 0)     //   300 exento
-        ], 0m);
+            (1000m, 2, 19, 0m),  // 2.000 al 19%
+            (500m, 2, 5, 0m),    // 1.000 al 5%
+            (300m, 1, 0, 0m)     //   300 exento
+        ]);
 
         Assert.Equal(3300m, r.SubtotalItems);
+        Assert.Equal(0m, r.Descuento);
         Assert.Equal(3300m, r.SubtotalConDescuento);
         Assert.Equal(2, r.IvaDesglose.Count);
         Assert.Equal(380m, r.IvaDesglose.Single(d => d.Tarifa == 19).Valor);
@@ -30,35 +31,44 @@ public class CalculosYDvTests
     }
 
     [Fact]
-    public void Calcular_prorratea_el_descuento_entre_tarifas()
+    public void Cada_linea_lleva_su_propio_descuento_y_su_iva_sobre_lo_descontado()
     {
-        // Subtotal 3.000: 2.000 al 19% (2/3) y 1.000 al 5% (1/3). Descuento 300 -> 200 / 100.
-        var r = RemisionCalculos.Calcular([(1000m, 2, 19), (1000m, 1, 5)], 300m);
+        // Línea A: 2 x 1.000 al 19% con 10% = -200 -> 1.800 (IVA 342). Línea B: 1 x 1.000 al 5% sin descuento (IVA 50).
+        var r = RemisionCalculos.Calcular([(1000m, 2, 19, 10m), (1000m, 1, 5, 0m)]);
 
-        var iva19 = r.IvaDesglose.Single(d => d.Tarifa == 19);
-        var iva5 = r.IvaDesglose.Single(d => d.Tarifa == 5);
-        Assert.Equal(1800m, iva19.Base);
-        Assert.Equal(342m, iva19.Valor);
-        Assert.Equal(900m, iva5.Base);
-        Assert.Equal(45m, iva5.Valor);
-        Assert.Equal(2700m, r.SubtotalConDescuento);
-        Assert.Equal(3087m, r.TotalGeneral);
+        Assert.Equal(3000m, r.SubtotalItems);
+        Assert.Equal(200m, r.Descuento);
+        Assert.Equal(2800m, r.SubtotalConDescuento);
+        Assert.Equal(1800m, r.IvaDesglose.Single(d => d.Tarifa == 19).Base);
+        Assert.Equal(342m, r.IvaDesglose.Single(d => d.Tarifa == 19).Valor);
+        Assert.Equal(1000m, r.IvaDesglose.Single(d => d.Tarifa == 5).Base);
+        Assert.Equal(50m, r.IvaDesglose.Single(d => d.Tarifa == 5).Valor);
+        Assert.Equal(3192m, r.TotalGeneral);
     }
 
     [Fact]
-    public void Calcular_descuento_porcentual_y_retencion_reducen_la_base_antes_del_iva()
+    public void Retenciones_no_cambian_el_iva_y_se_restan_al_total_a_pagar()
     {
-        // Subtotal 3.000 (2.000 al 19% y 1.000 al 5%). Descuento 10% = 300 y retención 150: la base baja 450 en total,
-        // repartida 2/3 y 1/3 -> bases 1.700 y 850; IVA 323 y 42,5.
-        var descuento = RemisionCalculos.CalcularDescuento(3000m, 10m);
-        var r = RemisionCalculos.Calcular([(1000m, 2, 19), (1000m, 1, 5)], descuento, 150m);
+        // Línea A: 2 x 1.000 al 19% con 10% -> 1.800 (IVA 342). Línea B: 1 x 1.000 al 5% con 10% -> 900 (IVA 45).
+        // Base 2.700, IVA 387. ReteFuente 2,5% de 2.700 = 67,50; ReteICA 9,66 por mil de 2.700 = 26,08; ReteIVA 15% de 387 = 58,05.
+        var r = RemisionCalculos.Calcular([(1000m, 2, 19, 10m), (1000m, 1, 5, 10m)], 2.5m, 9.66m, 15m);
 
-        Assert.Equal(300m, descuento);
-        Assert.Equal(2550m, r.SubtotalConDescuento);
-        Assert.Equal(1700m, r.IvaDesglose.Single(d => d.Tarifa == 19).Base);
-        Assert.Equal(323m, r.IvaDesglose.Single(d => d.Tarifa == 19).Valor);
-        Assert.Equal(42.5m, r.IvaDesglose.Single(d => d.Tarifa == 5).Valor);
-        Assert.Equal(2915.5m, r.TotalGeneral);
+        Assert.Equal(300m, r.Descuento);
+        Assert.Equal(2700m, r.SubtotalConDescuento);
+        Assert.Equal(342m, r.IvaDesglose.Single(d => d.Tarifa == 19).Valor);   // el IVA sigue sobre la base completa
+        Assert.Equal(3087m, r.TotalBruto);
+        Assert.Equal(67.50m, r.ReteFuente);
+        Assert.Equal(26.08m, r.ReteIca);
+        Assert.Equal(58.05m, r.ReteIva);
+        Assert.Equal(3087m - 67.50m - 26.08m - 58.05m, r.TotalGeneral);
+    }
+
+    [Fact]
+    public void Sin_retenciones_el_total_a_pagar_es_el_bruto()
+    {
+        var r = RemisionCalculos.Calcular([(1000m, 3, 19, 0m)]);
+        Assert.Equal(r.TotalBruto, r.TotalGeneral);
+        Assert.Equal(0m, r.ReteFuente + r.ReteIca + r.ReteIva);
     }
 
     [Theory]

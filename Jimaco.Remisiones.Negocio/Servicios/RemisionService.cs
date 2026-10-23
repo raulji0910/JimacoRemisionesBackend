@@ -73,14 +73,15 @@ public partial class RemisionService(
                 r.CompradorNombreSnapshot,
                 r.CompradorDocumentoSnapshot,
                 r.FechaCreacion,
-                r.Descuento,
-                r.Retencion,
+                r.ReteFuentePorcentaje,
+                r.ReteIcaPorMil,
+                r.ReteIvaPorcentaje,
                 r.EstadoPago,
                 r.MedioPago,
                 r.TipoEntrega,
                 r.EstadoEntrega,
                 r.CorreoEnviadoEn,
-                Items = r.Items.Select(i => new { i.PrecioUnitario, i.Cantidad, i.Iva }).ToList()
+                Items = r.Items.Select(i => new { i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje }).ToList()
             })
             .ToListAsync(ct);
 
@@ -88,7 +89,7 @@ public partial class RemisionService(
         // que usa el detalle, para que lista y detalle nunca difieran.
         var items = filas.Select(f =>
         {
-            var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), f.Descuento, f.Retencion);
+            var calculo = RemisionCalculos.Calcular(f.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje)), f.ReteFuentePorcentaje, f.ReteIcaPorMil, f.ReteIvaPorcentaje);
             return new RemisionResumenDto(
                 f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
                 f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.MedioPago, f.TipoEntrega, f.EstadoEntrega,
@@ -120,9 +121,9 @@ public partial class RemisionService(
             CompradorCiudadSnapshot = comprador.Ciudad,
             CompradorTelefonoSnapshot = comprador.Telefono,
             CompradorEmailSnapshot = comprador.Email,
-            DescuentoPorcentaje = dto.DescuentoPorcentaje,
-            Descuento = RemisionCalculos.CalcularDescuento(items.Sum(i => i.PrecioUnitario * i.Cantidad), dto.DescuentoPorcentaje),
-            Retencion = dto.Retencion,
+            ReteFuentePorcentaje = dto.ReteFuentePorcentaje,
+            ReteIcaPorMil = dto.ReteIcaPorMil,
+            ReteIvaPorcentaje = dto.ReteIvaPorcentaje,
             Nota = dto.Nota?.Trim(),
             TipoEntrega = dto.TipoEntrega,
             FechaCreacion = timeProvider.GetUtcNow().UtcDateTime,
@@ -156,9 +157,9 @@ public partial class RemisionService(
         remision.CompradorCiudadSnapshot = comprador.Ciudad;
         remision.CompradorTelefonoSnapshot = comprador.Telefono;
         remision.CompradorEmailSnapshot = comprador.Email;
-        remision.DescuentoPorcentaje = dto.DescuentoPorcentaje;
-        remision.Descuento = RemisionCalculos.CalcularDescuento(items.Sum(i => i.PrecioUnitario * i.Cantidad), dto.DescuentoPorcentaje);
-        remision.Retencion = dto.Retencion;
+        remision.ReteFuentePorcentaje = dto.ReteFuentePorcentaje;
+        remision.ReteIcaPorMil = dto.ReteIcaPorMil;
+        remision.ReteIvaPorcentaje = dto.ReteIvaPorcentaje;
         remision.Nota = dto.Nota?.Trim();
         remision.TipoEntrega = dto.TipoEntrega;
 
@@ -409,19 +410,27 @@ public partial class RemisionService(
             ? "Entregada en el punto de venta."
             : "Se despachará a la dirección indicada; le avisaremos cuando salga.";
 
+        var hayDescuentos = r.Items.Any(i => i.Descuento > 0);
         var filas = string.Concat(r.Items.Select(i =>
             $"<tr><td style=\"{Td}\">{E(i.ProductoCodigo)}</td><td style=\"{Td}\">{E(i.ProductoNombre)}</td>" +
             $"<td style=\"{Td};text-align:right\">{i.Cantidad}</td><td style=\"{Td};text-align:right\">{M(i.PrecioUnitario)}</td>" +
-            $"<td style=\"{Td};text-align:right\">{i.Iva}%</td><td style=\"{Td};text-align:right\">{M(i.Subtotal)}</td></tr>"));
+            $"<td style=\"{Td};text-align:right\">{i.Iva}%</td>" +
+            (hayDescuentos ? $"<td style=\"{Td};text-align:right\">{(i.DescuentoPorcentaje > 0 ? $"{i.DescuentoPorcentaje:0.##}%" : "—")}</td>" : "") +
+            $"<td style=\"{Td};text-align:right\">{M(i.SubtotalNeto)}</td></tr>"));
+        var encabezadoDescuento = hayDescuentos ? "<th style=\"padding:6px;text-align:right\">Desc.</th>" : "";
 
         const string Tot = "padding:2px 6px;text-align:right";
         var ivas = string.Concat(r.IvaDesglose.Select(d =>
             $"<tr><td style=\"{Tot}\">IVA {d.Tarifa}%</td><td style=\"{Tot}\">{M(d.Valor)}</td></tr>"));
-        var descuento = (r.Descuento > 0
-            ? $"<tr><td style=\"{Tot}\">Descuento ({r.DescuentoPorcentaje:0.##}%)</td><td style=\"{Tot}\">- {M(r.Descuento)}</td></tr>"
-            : "") + (r.Retencion > 0
-            ? $"<tr><td style=\"{Tot}\">Retención</td><td style=\"{Tot}\">- {M(r.Retencion)}</td></tr>"
-            : "");
+        var descuento = r.Descuento > 0
+            ? $"<tr><td style=\"{Tot}\">Descuentos</td><td style=\"{Tot}\">- {M(r.Descuento)}</td></tr>"
+            : "";
+        var hayRetenciones = r.ReteFuente > 0 || r.ReteIca > 0 || r.ReteIva > 0;
+        var retenciones = !hayRetenciones ? "" :
+            $"<tr><td style=\"{Tot}\">Total antes de retenciones</td><td style=\"{Tot}\">{M(r.TotalBruto)}</td></tr>" +
+            (r.ReteFuente > 0 ? $"<tr><td style=\"{Tot}\">ReteFuente ({r.ReteFuentePorcentaje:0.##}%)</td><td style=\"{Tot}\">- {M(r.ReteFuente)}</td></tr>" : "") +
+            (r.ReteIca > 0 ? $"<tr><td style=\"{Tot}\">ReteICA ({r.ReteIcaPorMil:0.###}‰)</td><td style=\"{Tot}\">- {M(r.ReteIca)}</td></tr>" : "") +
+            (r.ReteIva > 0 ? $"<tr><td style=\"{Tot}\">ReteIVA ({r.ReteIvaPorcentaje:0.##}% del IVA)</td><td style=\"{Tot}\">- {M(r.ReteIva)}</td></tr>" : "");
 
         var saludo = paraContabilidad
             ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"
@@ -453,7 +462,7 @@ public partial class RemisionService(
                   <tr style="background:#1c6521;color:#fff">
                     <th style="padding:6px;text-align:left">Código</th><th style="padding:6px;text-align:left">Producto</th>
                     <th style="padding:6px;text-align:right">Cant.</th><th style="padding:6px;text-align:right">Precio</th>
-                    <th style="padding:6px;text-align:right">IVA</th><th style="padding:6px;text-align:right">Subtotal</th>
+                    <th style="padding:6px;text-align:right">IVA</th>{encabezadoDescuento}<th style="padding:6px;text-align:right">Subtotal</th>
                   </tr>
                   {filas}
                 </table>
@@ -462,7 +471,8 @@ public partial class RemisionService(
                   {descuento}
                   <tr><td style="{Tot}">Valor antes de IVA</td><td style="{Tot}">{M(r.SubtotalConDescuento)}</td></tr>
                   {ivas}
-                  <tr><td style="{Tot};font-weight:bold">TOTAL</td><td style="{Tot};font-weight:bold">{M(r.TotalGeneral)}</td></tr>
+                  {retenciones}
+                  <tr><td style="{Tot};font-weight:bold">{(hayRetenciones ? "TOTAL A PAGAR" : "TOTAL")}</td><td style="{Tot};font-weight:bold">{M(r.TotalGeneral)}</td></tr>
                 </table>
                 <p style="color:#777;font-size:12px">Este documento es una remisión de entrega y no reemplaza la factura de venta.</p>
               </div>
@@ -488,14 +498,25 @@ public partial class RemisionService(
             throw new InvalidOperationException("La remisión debe tener al menos un ítem.");
         if (dto.Items.Any(i => i.Cantidad < 1))
             throw new InvalidOperationException("La cantidad de cada ítem debe ser mayor a cero.");
-        if (dto.DescuentoPorcentaje < 0 || dto.DescuentoPorcentaje > 50)
-            throw new InvalidOperationException("El descuento debe estar entre 0% y 50%.");
-        if (dto.Retencion < 0)
-            throw new InvalidOperationException("La retención no puede ser negativa.");
+        if (dto.Items.Any(i => i.DescuentoPorcentaje < 0 || i.DescuentoPorcentaje > 50))
+            throw new InvalidOperationException("El descuento de cada ítem debe estar entre 0% y 50%.");
+        // Un mismo producto repetido se suma; si viene con descuentos distintos no hay a cuál línea aplicarlos.
+        if (dto.Items.GroupBy(i => i.ProductoId).Any(g => g.Select(i => i.DescuentoPorcentaje).Distinct().Count() > 1))
+            throw new InvalidOperationException("Un producto repetido tiene descuentos distintos; deja una sola línea por producto.");
+        // Topes de sensatez (no son tarifas): evitan un 0,5 digitado como 50 o un ‰ digitado como %. Las tarifas las decide el vendedor.
+        if (dto.ReteFuentePorcentaje < 0 || dto.ReteFuentePorcentaje > 35)
+            throw new InvalidOperationException("La ReteFuente debe estar entre 0% y 35%.");
+        if (dto.ReteIcaPorMil < 0 || dto.ReteIcaPorMil > 20)
+            throw new InvalidOperationException("La ReteICA debe estar entre 0 y 20 por mil.");
+        if (dto.ReteIvaPorcentaje < 0 || dto.ReteIvaPorcentaje > 100)
+            throw new InvalidOperationException("La ReteIVA debe estar entre 0% y 100% del IVA.");
 
         var cantidades = dto.Items
             .GroupBy(i => i.ProductoId)
             .ToDictionary(g => g.Key, g => g.Sum(i => i.Cantidad));
+        var descuentos = dto.Items
+            .GroupBy(i => i.ProductoId)
+            .ToDictionary(g => g.Key, g => g.First().DescuentoPorcentaje);
 
         var ids = cantidades.Keys.ToList();
         var productos = await db.Productos.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
@@ -521,14 +542,10 @@ public partial class RemisionService(
                 PrecioUnitario = producto.PrecioVenta,
                 CostoSnapshot = producto.Costo,
                 Iva = producto.Iva,
-                Cantidad = cantidad
+                Cantidad = cantidad,
+                DescuentoPorcentaje = descuentos[productoId]
             });
         }
-
-        var subtotal = items.Sum(i => i.PrecioUnitario * i.Cantidad);
-        var baseConDescuento = subtotal - RemisionCalculos.CalcularDescuento(subtotal, dto.DescuentoPorcentaje);
-        if (dto.Retencion >= baseConDescuento)
-            throw new InvalidOperationException("La retención debe ser menor al valor antes de IVA (ya con el descuento).");
 
         return items;
     }
@@ -570,11 +587,14 @@ public partial class RemisionService(
     {
         // Orden estable por Id: sin esto SQL Server no garantiza el orden de la colección.
         var lineas = r.Items.OrderBy(i => i.Id).ToList();
-        var calculo = RemisionCalculos.Calcular(lineas.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), r.Descuento, r.Retencion);
+        var calculo = RemisionCalculos.Calcular(lineas.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje)), r.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje);
 
         var items = lineas.Select(i => new RemisionItemDto(
             i.Id, i.ProductoId, i.ProductoCodigoSnapshot, i.ProductoNombreSnapshot, i.PrecioUnitario, i.Iva,
-            i.Cantidad, i.PrecioUnitario * i.Cantidad, i.CostoSnapshot,
+            i.Cantidad, i.PrecioUnitario * i.Cantidad, i.DescuentoPorcentaje,
+            RemisionCalculos.DescuentoLinea(i.PrecioUnitario, i.Cantidad, i.DescuentoPorcentaje),
+            i.PrecioUnitario * i.Cantidad - RemisionCalculos.DescuentoLinea(i.PrecioUnitario, i.Cantidad, i.DescuentoPorcentaje),
+            i.CostoSnapshot,
             RemisionCalculos.MargenPorcentaje(i.PrecioUnitario, i.CostoSnapshot))).ToList();
 
         return new RemisionDetalleDto(
@@ -585,6 +605,7 @@ public partial class RemisionService(
             r.EstadoPago, r.FechaPago, r.PagadaPor, r.ReciboRedeban, r.MedioPago,
             r.TipoEntrega, r.EstadoEntrega, r.FechaEntrega, r.CorreoEnviadoEn,
             r.FechaAnulacion, r.MotivoAnulacion,
-            items, calculo.SubtotalItems, r.DescuentoPorcentaje, r.Descuento, r.Retencion, calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalGeneral);
+            items, calculo.SubtotalItems, calculo.Descuento, r.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje,
+            calculo.SubtotalConDescuento, calculo.IvaDesglose, calculo.TotalBruto, calculo.ReteFuente, calculo.ReteIca, calculo.ReteIva, calculo.TotalGeneral);
     }
 }

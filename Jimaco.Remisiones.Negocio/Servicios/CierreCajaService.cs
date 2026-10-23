@@ -28,7 +28,7 @@ public class CierreCajaService(AppDbContext db) : ICierreCajaService
             .ToListAsync(ct);
 
         static decimal Total(Remision r) => RemisionCalculos
-            .Calcular(r.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva)), r.Descuento, r.Retencion).TotalGeneral;
+            .Calcular(r.Items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje)), r.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje).TotalGeneral;
 
         CierreLineaDto Linea(Remision r, DateTime fechaLinea) => new(
             r.Id, RemisionService.Formatear(r.Consecutivo), fechaLinea, r.CompradorNombreSnapshot, r.MedioPago,

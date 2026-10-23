@@ -64,18 +64,17 @@ public class Remision
     [MaxLength(200)]
     public required string CompradorEmailSnapshot { get; set; }
 
-    // Descuento global: el vendedor lo digita en % (0-50) sobre el valor antes de IVA; aquí se guarda
-    // el % y el valor en pesos que resultó. Se prorratea entre las tarifas de IVA (ver RemisionCalculos).
+    // Retenciones (opcionales; el vendedor activa solo las que apliquen a ese cliente). Son lo que el comprador,
+    // como agente retenedor, descuenta del pago: NO cambian el IVA, solo el total a pagar.
+    // ReteFuente: % sobre el valor antes de IVA. ReteICA: por mil (‰) sobre el valor antes de IVA. ReteIVA: % sobre el IVA.
     [Column(TypeName = "decimal(5,2)")]
-    public decimal DescuentoPorcentaje { get; set; }
+    public decimal ReteFuentePorcentaje { get; set; }
 
-    [Column(TypeName = "decimal(18,2)")]
-    public decimal Descuento { get; set; }
+    [Column(TypeName = "decimal(6,3)")]
+    public decimal ReteIcaPorMil { get; set; }
 
-    // Retención (opcional, solo si el vendedor la activa): valor en pesos que se resta del valor antes
-    // de IVA, igual que un descuento (el IVA se calcula sobre lo que queda).
-    [Column(TypeName = "decimal(18,2)")]
-    public decimal Retencion { get; set; }
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal ReteIvaPorcentaje { get; set; }
 
     [MaxLength(500)]
     public string? Nota { get; set; }

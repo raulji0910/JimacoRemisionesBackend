@@ -2,13 +2,14 @@ using Jimaco.Remisiones.Modelo.Entidades;
 
 namespace Jimaco.Remisiones.Negocio.DTOs;
 
-public record RemisionItemEntradaDto(int ProductoId, int Cantidad);
+public record RemisionItemEntradaDto(int ProductoId, int Cantidad, decimal DescuentoPorcentaje = 0);
 
 public record RemisionGuardarDto(
     int CompradorId,
     TipoEntrega TipoEntrega,
-    decimal DescuentoPorcentaje,
-    decimal Retencion,
+    decimal ReteFuentePorcentaje,
+    decimal ReteIcaPorMil,
+    decimal ReteIvaPorcentaje,
     string? Nota,
     IReadOnlyList<RemisionItemEntradaDto> Items);
 
@@ -26,7 +27,11 @@ public record RemisionItemDto(
     decimal PrecioUnitario,
     int Iva,
     int Cantidad,
+    // Subtotal = valor bruto (precio x cantidad); Descuento y SubtotalNeto son los de esta línea.
     decimal Subtotal,
+    decimal DescuentoPorcentaje,
+    decimal Descuento,
+    decimal SubtotalNeto,
     // Solo informativos en la app (nunca en el PDF). Null si el producto no tenía costo.
     decimal? Costo,
     decimal? MargenPorcentaje);
@@ -77,11 +82,16 @@ public record RemisionDetalleDto(
     string? MotivoAnulacion,
     IReadOnlyList<RemisionItemDto> Items,
     decimal SubtotalItems,
-    decimal DescuentoPorcentaje,
     decimal Descuento,
-    decimal Retencion,
+    decimal ReteFuentePorcentaje,
+    decimal ReteIcaPorMil,
+    decimal ReteIvaPorcentaje,
     decimal SubtotalConDescuento,
     IReadOnlyList<IvaDesgloseDto> IvaDesglose,
+    decimal TotalBruto,
+    decimal ReteFuente,
+    decimal ReteIca,
+    decimal ReteIva,
     decimal TotalGeneral);
 
 // Resultado de marcar como pagada: el pago nunca falla por el correo, pero se informa si el envío

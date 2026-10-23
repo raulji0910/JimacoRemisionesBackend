@@ -138,7 +138,7 @@ public class RemisionFlujoTests
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, null, [new RemisionItemEntradaDto(1, 1)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(1, 1)])));
     }
 
     private static async Task SembrarCompradorAsync(AppDbContext db)
@@ -151,35 +151,58 @@ public class RemisionFlujoTests
     }
 
     [Theory]
-    [InlineData(-1, 0)]
-    [InlineData(50.01, 0)]
-    [InlineData(0, -5)]
-    [InlineData(0, 999999999)]
-    public async Task Rechaza_descuento_o_retencion_fuera_de_rango(double porcentaje, double retencion)
+    [InlineData(-1, 0, 0, 0)]       // descuento de ítem negativo
+    [InlineData(50.01, 0, 0, 0)]    // descuento de ítem sobre el tope
+    [InlineData(0, -1, 0, 0)]       // ReteFuente negativa
+    [InlineData(0, 36, 0, 0)]       // ReteFuente sobre el tope
+    [InlineData(0, 0, -1, 0)]       // ReteICA negativa
+    [InlineData(0, 0, 21, 0)]       // ReteICA sobre el tope
+    [InlineData(0, 0, 0, -1)]       // ReteIVA negativa
+    [InlineData(0, 0, 0, 101)]      // ReteIVA sobre el tope
+    public async Task Rechaza_descuento_o_retenciones_fuera_de_rango(double descuentoItem, double reteFuente, double reteIca, double reteIva)
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
         await SembrarCompradorAsync(db);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, (decimal)porcentaje, (decimal)retencion, null, [new RemisionItemEntradaDto(1, 1)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, (decimal)reteFuente, (decimal)reteIca, (decimal)reteIva, null, [new RemisionItemEntradaDto(1, 1, (decimal)descuentoItem)])));
         // Debe fallar por la regla de descuento/retención y no por otra cosa (comprador, stock...).
-        Assert.Matches("descuento|retenci", ex.Message.ToLowerInvariant());
+        Assert.Matches("descuento|rete", ex.Message.ToLowerInvariant());
     }
 
     [Fact]
-    public async Task Guarda_el_porcentaje_el_valor_del_descuento_y_la_retencion()
+    public async Task Guarda_el_descuento_por_item_y_las_tres_retenciones_con_sus_valores()
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
         await SembrarCompradorAsync(db);
 
-        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 10m, 100m, null, [new RemisionItemEntradaDto(1, 2)]));
+        // 2 x 1.000 al 19% con 10% de descuento: -200 -> base 1.800, IVA 342, bruto 2.142.
+        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 2.5m, 9.66m, 15m, null, [new RemisionItemEntradaDto(1, 2, 10m)]));
 
-        Assert.Equal(10m, r!.DescuentoPorcentaje);
-        Assert.Equal(r.SubtotalItems * 0.10m, r.Descuento);
-        Assert.Equal(100m, r.Retencion);
-        Assert.Equal(r.SubtotalItems - r.Descuento - 100m, r.SubtotalConDescuento);
+        var item = r!.Items.Single();
+        Assert.Equal((10m, 200m, 1800m), (item.DescuentoPorcentaje, item.Descuento, item.SubtotalNeto));
+        Assert.Equal(200m, r.Descuento);
+        Assert.Equal((2.5m, 9.66m, 15m), (r.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje));
+        Assert.Equal(342m, r.IvaDesglose.Single().Valor);
+        Assert.Equal(2142m, r.TotalBruto);
+        Assert.Equal(45m, r.ReteFuente);       // 2,5% de 1.800
+        Assert.Equal(17.39m, r.ReteIca);       // 9,66 por mil de 1.800
+        Assert.Equal(51.30m, r.ReteIva);       // 15% de 342
+        Assert.Equal(2142m - 45m - 17.39m - 51.30m, r.TotalGeneral);
+    }
+
+    [Fact]
+    public async Task Un_producto_repetido_con_descuentos_distintos_se_rechaza()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+        await SembrarCompradorAsync(db);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(1, 1, 5m), new RemisionItemEntradaDto(1, 1, 10m)])));
+        Assert.Contains("descuentos distintos", ex.Message);
     }
 
     [Fact]
