@@ -235,7 +235,7 @@ public partial class RemisionService(
         {
             var detalle = MapDetalle(remision);
             var adjunto = new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdfBuilder.Generar(detalle), "application/pdf");
-            await emailSender.EnviarAsync(compras, $"[Compras] Envío posterior {detalle.ConsecutivoFormateado} - {detalle.CompradorNombre}",
+            await emailSender.EnviarAsync(compras, AsuntoCompras(detalle),
                 ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), [adjunto], ct);
             return true;
         }
@@ -362,7 +362,8 @@ public partial class RemisionService(
             var adjuntos = new[] { new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf") };
             var asunto = $"Remisión {detalle.ConsecutivoFormateado} - Jimaco";
             var contabilidad = configuration?["Correo:Contabilidad"]?.Trim();
-            var compras = detalle.TipoEntrega == TipoEntrega.Envio ? configuration?["Correo:Compras"]?.Trim() : null;
+            // Compras recibe copia de TODA remisión pagada (en sitio o envío posterior).
+            var compras = configuration?["Correo:Compras"]?.Trim();
 
             // Se envían a la vez: el servidor SMTP tarda más de un minuto en aceptar mensajes hacia correos externos
             // (el del cliente), mientras que uno interno (contabilidad) lo acepta en menos de un segundo; en paralelo,
@@ -376,7 +377,7 @@ public partial class RemisionService(
             // Compras (Yazmin) recibe solo las remisiones de envío posterior, con la dirección de entrega destacada.
             var tareaCompras = string.IsNullOrWhiteSpace(compras)
                 ? Task.CompletedTask
-                : emailSender.EnviarAsync(compras, $"[Compras] Envío posterior {detalle.ConsecutivoFormateado} - {detalle.CompradorNombre}",
+                : emailSender.EnviarAsync(compras, AsuntoCompras(detalle),
                     ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), adjuntos, ct);
 
             var errorCliente = await EsperarAsync(tareaCliente);
@@ -439,6 +440,10 @@ public partial class RemisionService(
     }
 
     // La remisión completa va en el cuerpo del correo (visible sin abrir adjuntos); el PDF va además adjunto.
+    private static string AsuntoCompras(RemisionDetalleDto d) => d.TipoEntrega == TipoEntrega.Envio
+        ? $"[Compras] Envío posterior {d.ConsecutivoFormateado} - {d.CompradorNombre}"
+        : $"[Compras] Remisión {d.ConsecutivoFormateado} - {d.CompradorNombre}";
+
     private enum DestinoCorreo { Cliente, Contabilidad, Compras }
 
     private static string ConstruirCuerpoCorreo(RemisionDetalleDto r, DestinoCorreo destino)
@@ -476,7 +481,9 @@ public partial class RemisionService(
             (r.ReteIca > 0 ? $"<tr><td style=\"{Tot}\">ReteICA ({r.ReteIcaPorMil:0.###}‰)</td><td style=\"{Tot}\">- {M(r.ReteIca)}</td></tr>" : "") +
             (r.ReteIva > 0 ? $"<tr><td style=\"{Tot}\">ReteIVA ({r.ReteIvaPorcentaje:0.##}% del IVA)</td><td style=\"{Tot}\">- {M(r.ReteIva)}</td></tr>" : "");
 
-        var saludo = destino == DestinoCorreo.Compras
+        var saludo = destino == DestinoCorreo.Compras && r.TipoEntrega == TipoEntrega.EnSitio
+            ? $"<p>Nueva venta: la remisión <strong>{r.ConsecutivoFormateado}</strong> ya está pagada y fue <strong>entregada en el punto de venta</strong>. Copia para compras:</p>"
+            : destino == DestinoCorreo.Compras
             ? $"<p><strong>Envío posterior pendiente de despachar.</strong> La remisión <strong>{r.ConsecutivoFormateado}</strong> ya está pagada. Entregar en:</p><p style=\"background:#fff8e1;border:1px solid #f0d58a;padding:10px\">{notaHtml}</p>"
             : destino == DestinoCorreo.Contabilidad
             ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"

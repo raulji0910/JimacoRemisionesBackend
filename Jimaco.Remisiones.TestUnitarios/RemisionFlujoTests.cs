@@ -298,23 +298,25 @@ public class RemisionFlujoTests
     }
 
     [Fact]
-    public async Task Las_remisiones_de_envio_posterior_se_copian_a_compras_y_las_de_sitio_no()
+    public async Task Toda_remision_pagada_se_copia_a_compras_sea_en_sitio_o_envio_posterior()
     {
         var config = new Dictionary<string, string?> { ["Correo:Contabilidad"] = "conta@jimaco.test", ["Correo:Compras"] = "compras@jimaco.test" };
 
+        // Envío posterior: la copia lleva la dirección de entrega.
         var (servicio, db, email) = Crear(config: config);
         var envio = await SembrarRemisionAsync(db, TipoEntrega.Envio);
         (await db.Remisiones.FindAsync(envio))!.Nota = "Calle 1 # 2-3, Cali";
         await db.SaveChangesAsync();
         await servicio.MarcarPagadaAsync(envio, new MarcarPagadaDto(MedioPago.Efectivo, null), "cajero");
 
-        email.Verify(e => e.EnviarAsync("compras@jimaco.test", It.Is<string>(a => a.Contains("[Compras]")), It.Is<string>(c => c.Contains("Calle 1 # 2-3, Cali")), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(e => e.EnviarAsync("compras@jimaco.test", It.Is<string>(a => a.Contains("[Compras] Envío posterior")), It.Is<string>(c => c.Contains("Calle 1 # 2-3, Cali")), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
         email.Verify(e => e.EnviarAsync("conta@jimaco.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
 
+        // En sitio: compras también recibe su copia (informativa, sin dirección de despacho).
         var (servicio2, db2, email2) = Crear(config: config);
         var sitio = await SembrarRemisionAsync(db2, TipoEntrega.EnSitio);
         await servicio2.MarcarPagadaAsync(sitio, new MarcarPagadaDto(MedioPago.Efectivo, null), "cajero");
-        email2.Verify(e => e.EnviarAsync("compras@jimaco.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Never);
+        email2.Verify(e => e.EnviarAsync("compras@jimaco.test", It.Is<string>(a => a.StartsWith("[Compras] Remisión")), It.Is<string>(c => c.Contains("entregada en el punto de venta")), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
