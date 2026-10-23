@@ -1,7 +1,7 @@
 [
   {
     "codigo": "PJ-26550",
-    "nombre": "MC4 KEY KIT MC4-K01",
+    "nombre": "Kit de llaves MC4 MC4-K01",
     "unidadMedida": "Unidad",
     "precioVenta": 12000,
     "iva": 19,
@@ -9,7 +9,7 @@
   },
   {
     "codigo": "PJ-26551",
-    "nombre": "PV TOOL BAG PTB01",
+    "nombre": "Kit de herramienta MC4 con pelacable y cortacable PTB01",
     "unidadMedida": "Unidad",
     "precioVenta": 108000,
     "iva": 19,
@@ -17,7 +17,7 @@
   },
   {
     "codigo": "PJ-26552",
-    "nombre": "MC4 KEY KIT MC4-K02",
+    "nombre": "Kit de llaves MC4 MC4-K02",
     "unidadMedida": "Unidad",
     "precioVenta": 12000,
     "iva": 19,
@@ -25,7 +25,7 @@
   },
   {
     "codigo": "PJ-26553",
-    "nombre": "PV TOOL BAG PTB02",
+    "nombre": "Kit de herramienta MC4 con pelacable PTB02",
     "unidadMedida": "Unidad",
     "precioVenta": 115000,
     "iva": 19,
@@ -33,7 +33,7 @@
   },
   {
     "codigo": "PJ-26554",
-    "nombre": "HYDRAULIC CRIMPING TOOL 6-70 MM2 7 TON TQK-70",
+    "nombre": "Herramienta de crimpado hidráulica 6-70 mm² 7 toneladas YQK-70",
     "unidadMedida": "Unidad",
     "precioVenta": 93800,
     "iva": 19,
@@ -41,7 +41,7 @@
   },
   {
     "codigo": "PJ-26555",
-    "nombre": "HYDRAULIC CRIMPING TOOL 10-120 MM2 8 TON TQK-120",
+    "nombre": "Herramienta de crimpado hidráulica 10-120 mm² 8 toneladas YQK-120",
     "unidadMedida": "Unidad",
     "precioVenta": 103250,
     "iva": 19,
@@ -49,7 +49,7 @@
   },
   {
     "codigo": "PJ-26556",
-    "nombre": "HYDRAULIC CRIMPING TOOL 16-300 MM2 10 TON TQK-300",
+    "nombre": "Herramienta de crimpado hidráulica 16-300 mm² 10 toneladas YQK-300",
     "unidadMedida": "Unidad",
     "precioVenta": 126000,
     "iva": 19,
@@ -57,7 +57,7 @@
   },
   {
     "codigo": "PJ-26557",
-    "nombre": "HYDRAULIC CRIMPING TOOL 50-400 MM2 16 TON EP-430",
+    "nombre": "Herramienta de crimpado hidráulica 50-400 mm² 16 toneladas EP-430",
     "unidadMedida": "Unidad",
     "precioVenta": 1225000,
     "iva": 19,
@@ -65,7 +65,7 @@
   },
   {
     "codigo": "PJ-26558",
-    "nombre": "HYDRAULIC CRIMPING TOOL 150-630 MM2 23 TON FYQ-630",
+    "nombre": "Herramienta de crimpado hidráulica 150-630 mm² 30 toneladas FYQ-630",
     "unidadMedida": "Unidad",
     "precioVenta": 3794116,
     "iva": 19,
@@ -73,7 +73,7 @@
   },
   {
     "codigo": "PJ-26559",
-    "nombre": "HYDRAULIC CRIMPING TOOL 16-500 MM2 13 TON FYQ-500",
+    "nombre": "Herramienta de crimpado hidráulica 16-500 mm² 15 toneladas FYQ-500 bomba",
     "unidadMedida": "Unidad",
     "precioVenta": 2058823,
     "iva": 19,
@@ -81,7 +81,7 @@
   },
   {
     "codigo": "PJ-26560",
-    "nombre": "HYDRAULIC CRIMPING TOOL 300-1000 MM2 35 TON FYQ-1000",
+    "nombre": "Herramienta de crimpado hidráulica 300-1000 mm² 50 toneladas FYQ-1000 bomba",
     "unidadMedida": "Unidad",
     "precioVenta": 4764706,
     "iva": 19,
@@ -89,7 +89,7 @@
   },
   {
     "codigo": "PJ-26561",
-    "nombre": "RATCHET CABLE CUTTER 400 MM2 HS-520A",
+    "nombre": "Cizalla cortacable tipo rachet/carraca 400 mm² HS-520A",
     "unidadMedida": "Unidad",
     "precioVenta": 288235,
     "iva": 19,
@@ -97,7 +97,7 @@
   },
   {
     "codigo": "PJ-26659",
-    "nombre": "TERMINAL CRIMPING PLIER 0.25 - 10 MM2 PCS HSC8- 6-4A",
+    "nombre": "Ponchadora trinquete terminales de pin hueca aisladas 0,25 - 10 mm² HSC8-6-4A",
     "unidadMedida": "Unidad",
     "precioVenta": 73080,
     "iva": 19,
@@ -105,7 +105,7 @@
   },
   {
     "codigo": "PJ-26660",
-    "nombre": "TERMINAL CRIMPING PLIER 0.5 - 2.5 MM2 AN-06WF2C",
+    "nombre": "Ponchadora trinquete terminales de pin hueca y ojo aisladas 0,5 - 2,5 mm² AN-06WF2C",
     "unidadMedida": "Unidad",
     "precioVenta": 72450,
     "iva": 19,
@@ -113,7 +113,7 @@
   },
   {
     "codigo": "PJ-26661",
-    "nombre": "TERMINAL CRIMPING PLIER 0.5 - 1.5 4-6 MM2 AN-30J",
+    "nombre": "Ponchadora trinquete terminales de ojo aisladas 0.5 - 1.5 4-6 MM2 AN-30J",
     "unidadMedida": "Unidad",
     "precioVenta": 73500,
     "iva": 19,
