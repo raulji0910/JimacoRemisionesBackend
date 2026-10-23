@@ -65,17 +65,19 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
         {
             col.Item().Row(row =>
             {
-                row.ConstantItem(120).Image(LogoBytes).FitWidth();
-
-                row.RelativeItem().PaddingLeft(10).Column(datos =>
+                // El logo ya trae el nombre: va grande y solo se le agregan debajo los datos de la empresa (sin repetir el nombre).
+                row.RelativeItem().Column(datos =>
                 {
-                    datos.Item().Text(empresa.Nombre).FontSize(18).Bold().FontColor(VerdeMarca);
-                    if (!string.IsNullOrWhiteSpace(empresa.Nit))
-                        datos.Item().Text($"NIT {empresa.Nit}").FontSize(9).Bold();
-                    if (!string.IsNullOrWhiteSpace(empresa.Direccion))
-                        datos.Item().Text(empresa.Direccion).FontSize(9);
-                    if (!string.IsNullOrWhiteSpace(empresa.Ciudad))
-                        datos.Item().Text(empresa.Ciudad).FontSize(9);
+                    datos.Item().Width(210).Image(LogoBytes).FitWidth();
+                    datos.Item().PaddingTop(4).Column(texto =>
+                    {
+                        if (!string.IsNullOrWhiteSpace(empresa.Nit))
+                            texto.Item().Text($"NIT {empresa.Nit}").FontSize(9).Bold();
+                        if (!string.IsNullOrWhiteSpace(empresa.Direccion))
+                            texto.Item().Text(empresa.Direccion).FontSize(9);
+                        if (!string.IsNullOrWhiteSpace(empresa.Ciudad))
+                            texto.Item().Text(empresa.Ciudad).FontSize(9);
+                    });
                 });
 
                 row.ConstantItem(150).Column(badge =>
@@ -216,7 +218,9 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                         obs.Item().Text($"* {texto}").FontSize(7.5f);
 
                     if (!string.IsNullOrWhiteSpace(remision.Nota))
-                        obs.Item().PaddingTop(3).Text($"* Nota: {remision.Nota}").FontSize(7.5f).Bold();
+                        obs.Item().PaddingTop(3).Text(remision.TipoEntrega == TipoEntrega.Envio
+                            ? $"* Entregar en: {remision.Nota}"
+                            : $"* Nota: {remision.Nota}").FontSize(7.5f).Bold();
 
                     if (remision.EstadoPago == EstadoPago.Anulada && !string.IsNullOrWhiteSpace(remision.MotivoAnulacion))
                         obs.Item().PaddingTop(3).Text($"* Anulada: {remision.MotivoAnulacion}").FontSize(7.5f).Bold().FontColor(RojoAnulada);

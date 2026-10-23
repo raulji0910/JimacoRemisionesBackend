@@ -76,7 +76,8 @@ public class Remision
     [Column(TypeName = "decimal(5,2)")]
     public decimal ReteIvaPorcentaje { get; set; }
 
-    [MaxLength(500)]
+    // En un envío posterior es obligatoria y lleva la dirección y ciudad de entrega, por eso admite bastante texto.
+    [MaxLength(1000)]
     public string? Nota { get; set; }
 
     public EstadoPago EstadoPago { get; set; } = EstadoPago.Pendiente;

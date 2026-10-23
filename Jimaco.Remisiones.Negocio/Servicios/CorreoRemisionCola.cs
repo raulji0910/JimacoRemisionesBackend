@@ -14,18 +14,24 @@ namespace Jimaco.Remisiones.Negocio.Servicios;
 public class CorreoRemisionCola(IServiceScopeFactory scopeFactory, ILogger<CorreoRemisionCola> logger)
     : BackgroundService, ICorreoRemisionCola
 {
-    private readonly Channel<int> canal = Channel.CreateUnbounded<int>();
+    private readonly Channel<(int Id, bool SoloCompras)> canal = Channel.CreateUnbounded<(int, bool)>();
 
-    public void Encolar(int remisionId) => canal.Writer.TryWrite(remisionId);
+    public void Encolar(int remisionId, bool soloCompras = false) => canal.Writer.TryWrite((remisionId, soloCompras));
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var id in canal.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var (id, soloCompras) in canal.Reader.ReadAllAsync(stoppingToken))
         {
             try
             {
                 using var scope = scopeFactory.CreateScope();
                 var remisiones = scope.ServiceProvider.GetRequiredService<IRemisionService>();
+                if (soloCompras)
+                {
+                    await remisiones.EnviarCopiaComprasAsync(id, stoppingToken);
+                    continue;
+                }
+
                 var resultado = await remisiones.EnviarCorreoAsync(id, stoppingToken);
                 if (resultado is { CorreoEnviado: false })
                     logger.LogWarning("Correo de la remisión {Id} no enviado: {Error}", id, resultado.ErrorCorreo);

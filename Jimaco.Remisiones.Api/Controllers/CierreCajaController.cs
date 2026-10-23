@@ -10,11 +10,18 @@ namespace Jimaco.Remisiones.Api.Controllers;
 [Route("api/cierre-caja")]
 public class CierreCajaController(ICierreCajaService cierre, TimeProvider tiempo) : ControllerBase
 {
-    // fecha = día calendario de Colombia (yyyy-MM-dd); sin parámetro, hoy.
+    // desde / hasta = días calendario de Colombia (yyyy-MM-dd), ambos incluidos; sin parámetros, hoy.
     [HttpGet]
-    public async Task<ActionResult<CierreCajaDto>> Obtener([FromQuery] DateOnly? fecha, CancellationToken ct)
+    public async Task<ActionResult<CierreCajaDto>> Obtener([FromQuery] DateOnly? desde, [FromQuery] DateOnly? hasta, CancellationToken ct)
     {
-        var dia = fecha ?? DateOnly.FromDateTime(tiempo.GetUtcNow().UtcDateTime.AddHours(-5));
-        return Ok(await cierre.ObtenerAsync(dia, ct));
+        var hoy = DateOnly.FromDateTime(tiempo.GetUtcNow().UtcDateTime.AddHours(-5));
+        try
+        {
+            return Ok(await cierre.ObtenerAsync(desde ?? hasta ?? hoy, hasta ?? desde ?? hoy, ct));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { mensaje = ex.Message });
+        }
     }
 }

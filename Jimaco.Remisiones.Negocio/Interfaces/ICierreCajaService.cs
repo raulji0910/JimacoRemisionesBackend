@@ -4,5 +4,6 @@ namespace Jimaco.Remisiones.Negocio.Interfaces;
 
 public interface ICierreCajaService
 {
-    Task<CierreCajaDto> ObtenerAsync(DateOnly fecha, CancellationToken ct = default);
+    // Rango de días calendario de Colombia, ambos extremos incluidos.
+    Task<CierreCajaDto> ObtenerAsync(DateOnly desde, DateOnly hasta, CancellationToken ct = default);
 }

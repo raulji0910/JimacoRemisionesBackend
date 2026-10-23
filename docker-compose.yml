@@ -43,6 +43,7 @@ services:
       Smtp__RemitenteNombre: ${SMTP_REMITENTE_NOMBRE:-Jimaco}
       Smtp__RemitenteEmail: ${SMTP_REMITENTE:-}
       Correo__Contabilidad: ${CORREO_CONTABILIDAD:-contabilidad@jimaco.com.co}
+      Correo__Compras: ${CORREO_COMPRAS:-compras@jimaco.com.co}
     ports:
       - "8100:8080"
 

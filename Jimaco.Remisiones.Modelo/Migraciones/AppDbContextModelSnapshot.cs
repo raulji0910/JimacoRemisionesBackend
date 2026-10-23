@@ -284,8 +284,8 @@ namespace Jimaco.Remisiones.Modelo.Migraciones
                         .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("Nota")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("PagadaPor")
                         .HasMaxLength(200)

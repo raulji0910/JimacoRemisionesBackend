@@ -12,9 +12,18 @@ namespace Jimaco.Remisiones.TestUnitarios;
 // CrearAsync no se prueba aquí: el consecutivo sale de una SQL SEQUENCE que InMemory no soporta
 // (se valida contra SQL Server real). Estas pruebas siembran la remisión directo y cubren el
 // resto del ciclo: pagar, entregar, anular, correo.
+// IConfiguration mínima para las pruebas (solo se lee por clave).
+internal sealed class ConfiguracionFalsa(Dictionary<string, string?> valores) : Microsoft.Extensions.Configuration.IConfiguration
+{
+    public string? this[string key] { get => valores.GetValueOrDefault(key); set => valores[key] = value; }
+    public IEnumerable<Microsoft.Extensions.Configuration.IConfigurationSection> GetChildren() => [];
+    public Microsoft.Extensions.Primitives.IChangeToken GetReloadToken() => throw new NotSupportedException();
+    public Microsoft.Extensions.Configuration.IConfigurationSection GetSection(string key) => throw new NotSupportedException();
+}
+
 public class RemisionFlujoTests
 {
-    private static (RemisionService Servicio, AppDbContext Db, Mock<IEmailSender> Email) Crear(bool correoFalla = false)
+    private static (RemisionService Servicio, AppDbContext Db, Mock<IEmailSender> Email) Crear(bool correoFalla = false, Dictionary<string, string?>? config = null)
     {
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -27,7 +36,8 @@ public class RemisionFlujoTests
         var pdf = new Mock<IRemisionPdfBuilder>();
         pdf.Setup(p => p.Generar(It.IsAny<RemisionDetalleDto>())).Returns([1, 2, 3]);
 
-        var servicio = new RemisionService(db, pdf.Object, email.Object, TimeProvider.System, NullLogger<RemisionService>.Instance);
+        var servicio = new RemisionService(db, pdf.Object, email.Object, TimeProvider.System, NullLogger<RemisionService>.Instance,
+            config is null ? null : new ConfiguracionFalsa(config));
         return (servicio, db, email);
     }
 
@@ -138,7 +148,7 @@ public class RemisionFlujoTests
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(1, 1)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(1, 1)])));
     }
 
     private static async Task SembrarCompradorAsync(AppDbContext db)
@@ -151,46 +161,160 @@ public class RemisionFlujoTests
     }
 
     [Theory]
-    [InlineData(-1, 0, 0, 0)]       // descuento de ítem negativo
-    [InlineData(50.01, 0, 0, 0)]    // descuento de ítem sobre el tope
-    [InlineData(0, -1, 0, 0)]       // ReteFuente negativa
-    [InlineData(0, 36, 0, 0)]       // ReteFuente sobre el tope
-    [InlineData(0, 0, -1, 0)]       // ReteICA negativa
-    [InlineData(0, 0, 21, 0)]       // ReteICA sobre el tope
-    [InlineData(0, 0, 0, -1)]       // ReteIVA negativa
-    [InlineData(0, 0, 0, 101)]      // ReteIVA sobre el tope
-    public async Task Rechaza_descuento_o_retenciones_fuera_de_rango(double descuentoItem, double reteFuente, double reteIca, double reteIva)
+    [InlineData(-1)]       // descuento de ítem negativo
+    [InlineData(50.01)]    // descuento de ítem sobre el tope
+    public async Task Rechaza_descuento_de_item_fuera_de_rango(double descuentoItem)
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
         await SembrarCompradorAsync(db);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, (decimal)reteFuente, (decimal)reteIca, (decimal)reteIva, null, [new RemisionItemEntradaDto(1, 1, (decimal)descuentoItem)])));
-        // Debe fallar por la regla de descuento/retención y no por otra cosa (comprador, stock...).
-        Assert.Matches("descuento|rete", ex.Message.ToLowerInvariant());
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(1, 1, (decimal)descuentoItem)])));
+        Assert.Contains("descuento", ex.Message.ToLowerInvariant());
     }
 
     [Fact]
-    public async Task Guarda_el_descuento_por_item_y_las_tres_retenciones_con_sus_valores()
+    public async Task Guarda_el_descuento_por_item_sin_retenciones()
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
         await SembrarCompradorAsync(db);
 
-        // 2 x 1.000 al 19% con 10% de descuento: -200 -> base 1.800, IVA 342, bruto 2.142.
-        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 2.5m, 9.66m, 15m, null, [new RemisionItemEntradaDto(1, 2, 10m)]));
+        // 2 x 1.000 al 19% con 10% de descuento: -200 -> base 1.800, IVA 342, total 2.142.
+        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(1, 2, 10m)]));
 
         var item = r!.Items.Single();
         Assert.Equal((10m, 200m, 1800m), (item.DescuentoPorcentaje, item.Descuento, item.SubtotalNeto));
         Assert.Equal(200m, r.Descuento);
-        Assert.Equal((2.5m, 9.66m, 15m), (r.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje));
         Assert.Equal(342m, r.IvaDesglose.Single().Valor);
-        Assert.Equal(2142m, r.TotalBruto);
-        Assert.Equal(45m, r.ReteFuente);       // 2,5% de 1.800
-        Assert.Equal(17.39m, r.ReteIca);       // 9,66 por mil de 1.800
-        Assert.Equal(51.30m, r.ReteIva);       // 15% de 342
-        Assert.Equal(2142m - 45m - 17.39m - 51.30m, r.TotalGeneral);
+        Assert.Equal(2142m, r.TotalGeneral);
+        Assert.Equal(0m, r.ReteFuente + r.ReteIca + r.ReteIva);
+    }
+
+    [Fact]
+    public async Task Las_retenciones_usan_tarifas_fijas_y_se_restan_al_total()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
+        await SembrarCompradorAsync(db);
+
+        // 600 x 1.000 al 19%: base 600.000 (supera el mínimo de 523.740), IVA 114.000, bruto 714.000.
+        var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, true, true, true, null, [new RemisionItemEntradaDto(1, 600)]));
+
+        Assert.Equal((2.5m, 6.9m, 15m), (r!.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje));
+        Assert.Equal(714000m, r.TotalBruto);
+        Assert.Equal(15000m, r.ReteFuente);      // 2,5% de 600.000
+        Assert.Equal(4140m, r.ReteIca);          // 6,9 por mil de 600.000
+        Assert.Equal(17100m, r.ReteIva);         // 15% del IVA (114.000)
+        Assert.Equal(714000m - 15000m - 4140m - 17100m, r.TotalGeneral);
+    }
+
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public async Task Las_retenciones_se_rechazan_bajo_el_minimo_de_10_uvt(bool fuente, bool ica, bool iva)
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
+        await SembrarCompradorAsync(db);
+
+        // 523 x 1.000 = 523.000 < 523.740 (10 UVT de 2026): no procede ninguna retención.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, fuente, ica, iva, null, [new RemisionItemEntradaDto(1, 523)])));
+        Assert.Contains("523.740", ex.Message);
+    }
+
+    [Fact]
+    public async Task El_minimo_de_las_retenciones_se_mide_despues_de_los_descuentos()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
+        await SembrarCompradorAsync(db);
+
+        // 600.000 con 15% de descuento = 510.000 < 523.740: aunque el bruto lo supera, ya no procede.
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, true, false, false, null, [new RemisionItemEntradaDto(1, 600, 15m)])));
+    }
+
+    [Fact]
+    public void Las_reglas_de_retenciones_salen_de_la_configuracion_con_valores_por_defecto()
+    {
+        var porDefecto = ReglasRetenciones.Cargar(null);
+        Assert.Equal((2.5m, 6.9m, 15m, 523740m), (porDefecto.ReteFuentePorcentaje, porDefecto.ReteIcaPorMil, porDefecto.ReteIvaPorcentaje, porDefecto.BaseMinima));
+
+        var otra = ReglasRetenciones.Cargar(new ConfiguracionFalsa(new() { ["Retenciones:Uvt"] = "60000", ["Retenciones:ReteIcaPorMil"] = "9.66" }));
+        Assert.Equal(600000m, otra.BaseMinima);
+        Assert.Equal(9.66m, otra.ReteIcaPorMil);
+    }
+
+    [Fact]
+    public async Task Un_envio_posterior_exige_la_direccion_en_las_notas()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+        await SembrarCompradorAsync(db);
+        var item = new[] { new RemisionItemEntradaDto(1, 1) };
+
+        foreach (var nota in new string?[] { null, "", "   ", "corta" })
+        {
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.Envio, false, false, false, nota, item)));
+            Assert.Contains("dirección y la ciudad", ex.Message);
+        }
+
+        // Con la dirección escrita pasa; y una venta en sitio sigue sin pedir nota.
+        var envio = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.Envio, false, false, false, "Calle 10 # 5-20, Bogotá", item));
+        Assert.Equal("Calle 10 # 5-20, Bogotá", envio!.Nota);
+        var enSitio = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, item));
+        Assert.Null(enSitio!.Nota);
+    }
+
+    [Fact]
+    public async Task La_nota_admite_hasta_1000_caracteres()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+        await SembrarCompradorAsync(db);
+        var item = new[] { new RemisionItemEntradaDto(1, 1) };
+
+        var larga = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.Envio, false, false, false, new string('x', 1000), item));
+        Assert.Equal(1000, larga!.Nota!.Length);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.Envio, false, false, false, new string('x', 1001), item)));
+    }
+
+    [Fact]
+    public async Task Cambiar_a_envio_posterior_exige_la_direccion()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.CambiarTipoEntregaAsync(id, new CambiarTipoEntregaDto(TipoEntrega.Envio)));
+        var r = await servicio.CambiarTipoEntregaAsync(id, new CambiarTipoEntregaDto(TipoEntrega.Envio, "Carrera 7 # 80-10, Medellín"));
+        Assert.Equal(TipoEntrega.Envio, r!.TipoEntrega);
+        Assert.Equal("Carrera 7 # 80-10, Medellín", r.Nota);
+    }
+
+    [Fact]
+    public async Task Las_remisiones_de_envio_posterior_se_copian_a_compras_y_las_de_sitio_no()
+    {
+        var config = new Dictionary<string, string?> { ["Correo:Contabilidad"] = "conta@jimaco.test", ["Correo:Compras"] = "compras@jimaco.test" };
+
+        var (servicio, db, email) = Crear(config: config);
+        var envio = await SembrarRemisionAsync(db, TipoEntrega.Envio);
+        (await db.Remisiones.FindAsync(envio))!.Nota = "Calle 1 # 2-3, Cali";
+        await db.SaveChangesAsync();
+        await servicio.MarcarPagadaAsync(envio, new MarcarPagadaDto(MedioPago.Efectivo, null), "cajero");
+
+        email.Verify(e => e.EnviarAsync("compras@jimaco.test", It.Is<string>(a => a.Contains("[Compras]")), It.Is<string>(c => c.Contains("Calle 1 # 2-3, Cali")), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
+        email.Verify(e => e.EnviarAsync("conta@jimaco.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Once);
+
+        var (servicio2, db2, email2) = Crear(config: config);
+        var sitio = await SembrarRemisionAsync(db2, TipoEntrega.EnSitio);
+        await servicio2.MarcarPagadaAsync(sitio, new MarcarPagadaDto(MedioPago.Efectivo, null), "cajero");
+        email2.Verify(e => e.EnviarAsync("compras@jimaco.test", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -201,7 +325,7 @@ public class RemisionFlujoTests
         await SembrarCompradorAsync(db);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(1, 1, 5m), new RemisionItemEntradaDto(1, 1, 10m)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(1, 1, 5m), new RemisionItemEntradaDto(1, 1, 10m)])));
         Assert.Contains("descuentos distintos", ex.Message);
     }
 
@@ -256,7 +380,7 @@ public class RemisionFlujoTests
             Nueva(5, MedioPago.Qr, hoy.AddDays(-1), EstadoPago.Anulada, hoy));        // cobrada ayer, devuelta hoy: 5.000 de devolución
         await db.SaveChangesAsync();
 
-        var cierre = await new CierreCajaService(db).ObtenerAsync(dia);
+        var cierre = await new CierreCajaService(db).ObtenerAsync(dia, dia);
 
         Assert.Equal(6000m, cierre.TotalCobros);          // 1.000 + 2.000 + 3.000
         Assert.Equal(8000m, cierre.TotalDevoluciones);    // 3.000 + 5.000
@@ -266,5 +390,48 @@ public class RemisionFlujoTests
         Assert.Equal(-5000m, cierre.PorMedio.Single(m => m.Medio == MedioPago.Qr).Neto);
         Assert.Equal(3, cierre.Cobros.Count);
         Assert.Equal(2, cierre.Devoluciones.Count);
+    }
+
+    [Fact]
+    public async Task Cierre_de_caja_por_rango_separa_por_dia_y_por_usuario()
+    {
+        var (_, db, _) = Crear();
+        db.Productos.Add(new Producto { Id = 1, Codigo = "A", Nombre = "Prod", PrecioVenta = 1000, Stock = 10, FechaCreacion = DateTime.UtcNow });
+        var lunes = new DateTime(2026, 10, 19, 15, 0, 0, DateTimeKind.Utc);   // 10:00 en Colombia
+        Remision Nueva(int n, MedioPago medio, DateTime pago, string usuario) => new()
+        {
+            Consecutivo = n, CompradorId = 1, CompradorTipoDocumentoSnapshot = "CC", CompradorDocumentoSnapshot = "1",
+            CompradorNombreSnapshot = "C", CompradorEmailSnapshot = "c@c.co", EstadoPago = EstadoPago.Pagada, MedioPago = medio,
+            FechaPago = pago, FechaCreacion = pago, PagadaPor = usuario, CreadoPor = usuario, ReciboRedeban = medio == MedioPago.Efectivo ? null : "R",
+            Items = [new RemisionItem { ProductoId = 1, ProductoCodigoSnapshot = "A", ProductoNombreSnapshot = "P", PrecioUnitario = 1000, Iva = 0, Cantidad = n }]
+        };
+        db.Remisiones.AddRange(
+            Nueva(1, MedioPago.Efectivo, lunes, "Ana"),                               // lunes 19: 1.000
+            Nueva(2, MedioPago.Datafono, lunes.AddDays(1), "Luis"),                   // martes 20: 2.000
+            Nueva(3, MedioPago.Efectivo, lunes.AddDays(1), "Ana"),                    // martes 20: 3.000
+            Nueva(4, MedioPago.Qr, lunes.AddDays(5), "Ana"));                         // domingo 25: fuera del rango
+        await db.SaveChangesAsync();
+
+        var cierre = await new CierreCajaService(db).ObtenerAsync(new DateOnly(2026, 10, 19), new DateOnly(2026, 10, 21));
+
+        Assert.Equal(3, cierre.PorDia.Count);                                         // lunes, martes y miércoles (sin movimiento)
+        Assert.Equal(1000m, cierre.PorDia[0].Neto);
+        Assert.Equal(5000m, cierre.PorDia[1].Neto);
+        Assert.Equal((2000m, 0m, 3000m), (cierre.PorDia[1].Datafono, cierre.PorDia[1].Qr, cierre.PorDia[1].Efectivo));
+        Assert.Equal(0m, cierre.PorDia[2].Neto);
+        Assert.Equal(6000m, cierre.Neto);
+
+        var ana = cierre.PorUsuario.Single(u => u.Usuario == "Ana");
+        Assert.Equal((2, 4000m, 4000m), (ana.CantidadCobros, ana.TotalCobros, ana.Efectivo));
+        Assert.Equal(2000m, cierre.PorUsuario.Single(u => u.Usuario == "Luis").TotalCobros);
+    }
+
+    [Fact]
+    public async Task Cierre_de_caja_valida_el_rango()
+    {
+        var (_, db, _) = Crear();
+        var servicio = new CierreCajaService(db);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ObtenerAsync(new DateOnly(2026, 10, 20), new DateOnly(2026, 10, 19)));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ObtenerAsync(new DateOnly(2025, 1, 1), new DateOnly(2026, 10, 19)));
     }
 }

@@ -56,6 +56,7 @@ public partial class RemisionService(
             query = query.Where(r =>
                 EF.Functions.Like(r.CompradorNombreSnapshot, patron) ||
                 EF.Functions.Like(r.CompradorDocumentoSnapshot, patron) ||
+                (r.CreadoPor != null && EF.Functions.Like(r.CreadoPor, patron)) ||
                 (consecutivoBuscado != null && r.Consecutivo == consecutivoBuscado));
         }
 
@@ -81,6 +82,7 @@ public partial class RemisionService(
                 r.TipoEntrega,
                 r.EstadoEntrega,
                 r.CorreoEnviadoEn,
+                r.CreadoPor,
                 Items = r.Items.Select(i => new { i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje }).ToList()
             })
             .ToListAsync(ct);
@@ -93,7 +95,7 @@ public partial class RemisionService(
             return new RemisionResumenDto(
                 f.Id, f.Consecutivo, Formatear(f.Consecutivo), f.CompradorNombreSnapshot, f.CompradorDocumentoSnapshot,
                 f.FechaCreacion, calculo.TotalGeneral, f.EstadoPago, f.MedioPago, f.TipoEntrega, f.EstadoEntrega,
-                f.CorreoEnviadoEn is not null);
+                f.CorreoEnviadoEn is not null, f.CreadoPor);
         }).ToList();
 
         return new PaginaResultado<RemisionResumenDto>(items, total, pagina, tamanoPagina);
@@ -121,9 +123,6 @@ public partial class RemisionService(
             CompradorCiudadSnapshot = comprador.Ciudad,
             CompradorTelefonoSnapshot = comprador.Telefono,
             CompradorEmailSnapshot = comprador.Email,
-            ReteFuentePorcentaje = dto.ReteFuentePorcentaje,
-            ReteIcaPorMil = dto.ReteIcaPorMil,
-            ReteIvaPorcentaje = dto.ReteIvaPorcentaje,
             Nota = dto.Nota?.Trim(),
             TipoEntrega = dto.TipoEntrega,
             FechaCreacion = timeProvider.GetUtcNow().UtcDateTime,
@@ -131,6 +130,7 @@ public partial class RemisionService(
             Items = items
         };
 
+        AplicarRetenciones(remision, dto, items);
         db.Remisiones.Add(remision);
         await db.SaveChangesAsync(ct);
 
@@ -157,9 +157,7 @@ public partial class RemisionService(
         remision.CompradorCiudadSnapshot = comprador.Ciudad;
         remision.CompradorTelefonoSnapshot = comprador.Telefono;
         remision.CompradorEmailSnapshot = comprador.Email;
-        remision.ReteFuentePorcentaje = dto.ReteFuentePorcentaje;
-        remision.ReteIcaPorMil = dto.ReteIcaPorMil;
-        remision.ReteIvaPorcentaje = dto.ReteIvaPorcentaje;
+        AplicarRetenciones(remision, dto, items);
         remision.Nota = dto.Nota?.Trim();
         remision.TipoEntrega = dto.TipoEntrega;
 
@@ -226,6 +224,28 @@ public partial class RemisionService(
         return new PagarResultadoDto(MapDetalle(remision), enviado, error);
     }
 
+    public async Task<bool> EnviarCopiaComprasAsync(int id, CancellationToken ct = default)
+    {
+        var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var compras = configuration?["Correo:Compras"]?.Trim();
+        if (remision is null || remision.EstadoPago != EstadoPago.Pagada || remision.TipoEntrega != TipoEntrega.Envio || string.IsNullOrWhiteSpace(compras))
+            return false;
+
+        try
+        {
+            var detalle = MapDetalle(remision);
+            var adjunto = new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdfBuilder.Generar(detalle), "application/pdf");
+            await emailSender.EnviarAsync(compras, $"[Compras] Envío posterior {detalle.ConsecutivoFormateado} - {detalle.CompradorNombre}",
+                ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), [adjunto], ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Fallo enviando la copia a compras de la remisión {Id}", id);
+            return false;
+        }
+    }
+
     public async Task<EnviarCorreoResultadoDto?> EnviarCorreoAsync(int id, CancellationToken ct = default)
     {
         var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -250,6 +270,14 @@ public partial class RemisionService(
         if (remision.EstadoEntrega == EstadoEntrega.Entregada)
             throw new InvalidOperationException("La remisión ya fue entregada.");
 
+        var pasaAEnvio = dto.TipoEntrega == TipoEntrega.Envio && remision.TipoEntrega != TipoEntrega.Envio;
+        if (dto.TipoEntrega == TipoEntrega.Envio)
+        {
+            var nota = string.IsNullOrWhiteSpace(dto.Nota) ? remision.Nota : dto.Nota.Trim();
+            ValidarNotaDeEnvio(dto.TipoEntrega, nota);
+            remision.Nota = nota;
+        }
+
         remision.TipoEntrega = dto.TipoEntrega;
 
         // Si ya está pagada y pasa a "en sitio", se entrega en ese momento.
@@ -260,6 +288,11 @@ public partial class RemisionService(
         }
 
         await db.SaveChangesAsync(ct);
+
+        // Ya cobrada y ahora de envío posterior: compras todavía no la conoce, se le manda su copia.
+        if (pasaAEnvio && remision.EstadoPago == EstadoPago.Pagada)
+            cola?.Encolar(remision.Id, soloCompras: true);
+
         return MapDetalle(remision);
     }
 
@@ -329,19 +362,26 @@ public partial class RemisionService(
             var adjuntos = new[] { new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdf, "application/pdf") };
             var asunto = $"Remisión {detalle.ConsecutivoFormateado} - Jimaco";
             var contabilidad = configuration?["Correo:Contabilidad"]?.Trim();
+            var compras = detalle.TipoEntrega == TipoEntrega.Envio ? configuration?["Correo:Compras"]?.Trim() : null;
 
             // Se envían a la vez: el servidor SMTP tarda más de un minuto en aceptar mensajes hacia correos externos
             // (el del cliente), mientras que uno interno (contabilidad) lo acepta en menos de un segundo; en paralelo,
             // contabilidad recibe su copia de inmediato sin esperar al del cliente.
             var tareaCliente = emailSender.EnviarAsync(remision.CompradorEmailSnapshot, asunto,
-                ConstruirCuerpoCorreo(detalle, paraContabilidad: false), adjuntos, ct);
+                ConstruirCuerpoCorreo(detalle, DestinoCorreo.Cliente), adjuntos, ct);
             var tareaContabilidad = string.IsNullOrWhiteSpace(contabilidad)
                 ? Task.CompletedTask
                 : emailSender.EnviarAsync(contabilidad, $"[Contabilidad] {asunto} - {detalle.CompradorNombre}",
-                    ConstruirCuerpoCorreo(detalle, paraContabilidad: true), adjuntos, ct);
+                    ConstruirCuerpoCorreo(detalle, DestinoCorreo.Contabilidad), adjuntos, ct);
+            // Compras (Yazmin) recibe solo las remisiones de envío posterior, con la dirección de entrega destacada.
+            var tareaCompras = string.IsNullOrWhiteSpace(compras)
+                ? Task.CompletedTask
+                : emailSender.EnviarAsync(compras, $"[Compras] Envío posterior {detalle.ConsecutivoFormateado} - {detalle.CompradorNombre}",
+                    ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), adjuntos, ct);
 
             var errorCliente = await EsperarAsync(tareaCliente);
             var errorContabilidad = await EsperarAsync(tareaContabilidad);
+            var errorCompras = await EsperarAsync(tareaCompras);
 
             if (errorCliente is not null)
             {
@@ -358,10 +398,10 @@ public partial class RemisionService(
             remision.CorreoEnviadoEn = timeProvider.GetUtcNow().UtcDateTime;
             await db.SaveChangesAsync(ct);
 
-            if (errorContabilidad is not null)
+            if (errorContabilidad is not null || errorCompras is not null)
             {
-                logger.LogError(errorContabilidad, "Fallo enviando la copia a contabilidad de la remisión {Id}", remision.Id);
-                return (true, "La remisión llegó al cliente, pero no se pudo enviar la copia a contabilidad. Reintenta desde el detalle.");
+                logger.LogError(errorContabilidad ?? errorCompras, "Fallo enviando una copia interna de la remisión {Id}", remision.Id);
+                return (true, "La remisión llegó al cliente, pero no se pudo enviar una copia interna (contabilidad o compras). Reintenta desde el detalle.");
             }
             return (true, null);
         }
@@ -399,16 +439,20 @@ public partial class RemisionService(
     }
 
     // La remisión completa va en el cuerpo del correo (visible sin abrir adjuntos); el PDF va además adjunto.
-    private static string ConstruirCuerpoCorreo(RemisionDetalleDto r, bool paraContabilidad)
+    private enum DestinoCorreo { Cliente, Contabilidad, Compras }
+
+    private static string ConstruirCuerpoCorreo(RemisionDetalleDto r, DestinoCorreo destino)
     {
         static string E(string? t) => WebUtility.HtmlEncode(t ?? "");
         static string M(decimal v) => $"$ {v.ToString("N0", CulturaCo)}";
         const string Td = "padding:6px;border-bottom:1px solid #eee";
         const string Et = "padding:2px 10px 2px 0;color:#777";
 
+        // La nota de un envío posterior lleva la dirección y ciudad de entrega (puede traer saltos de línea).
+        var notaHtml = E(r.Nota).Replace("\r\n", "<br>").Replace("\n", "<br>");
         var entrega = r.TipoEntrega == TipoEntrega.EnSitio
             ? "Entregada en el punto de venta."
-            : "Se despachará a la dirección indicada; le avisaremos cuando salga.";
+            : $"Envío posterior a:<br><strong>{notaHtml}</strong>";
 
         var hayDescuentos = r.Items.Any(i => i.Descuento > 0);
         var filas = string.Concat(r.Items.Select(i =>
@@ -432,7 +476,9 @@ public partial class RemisionService(
             (r.ReteIca > 0 ? $"<tr><td style=\"{Tot}\">ReteICA ({r.ReteIcaPorMil:0.###}‰)</td><td style=\"{Tot}\">- {M(r.ReteIca)}</td></tr>" : "") +
             (r.ReteIva > 0 ? $"<tr><td style=\"{Tot}\">ReteIVA ({r.ReteIvaPorcentaje:0.##}% del IVA)</td><td style=\"{Tot}\">- {M(r.ReteIva)}</td></tr>" : "");
 
-        var saludo = paraContabilidad
+        var saludo = destino == DestinoCorreo.Compras
+            ? $"<p><strong>Envío posterior pendiente de despachar.</strong> La remisión <strong>{r.ConsecutivoFormateado}</strong> ya está pagada. Entregar en:</p><p style=\"background:#fff8e1;border:1px solid #f0d58a;padding:10px\">{notaHtml}</p>"
+            : destino == DestinoCorreo.Contabilidad
             ? $"<p>Nueva venta registrada: remisión <strong>{r.ConsecutivoFormateado}</strong>. Datos del cliente y de la venta:</p>"
             : $"<p>Hola <strong>{E(r.CompradorNombre)}</strong>,</p><p>Gracias por su compra. Esta es su remisión <strong>{r.ConsecutivoFormateado}</strong> (también adjunta en PDF).</p>";
 
@@ -491,6 +537,34 @@ public partial class RemisionService(
         return comprador;
     }
 
+    // En un envío posterior las notas llevan la dirección y la ciudad de entrega: son obligatorias (y admiten bastante texto).
+    private static void ValidarNotaDeEnvio(TipoEntrega tipo, string? nota)
+    {
+        if (nota is { Length: > 1000 })
+            throw new InvalidOperationException("La nota admite máximo 1.000 caracteres.");
+        if (tipo == TipoEntrega.Envio && (nota is null || nota.Trim().Length < 10))
+            throw new InvalidOperationException("Para un envío posterior debes escribir en las notas la dirección y la ciudad de entrega.");
+    }
+
+    // Las retenciones usan tarifas FIJAS (no se digitan) y solo proceden si el valor antes de IVA (ya con descuentos) llega al mínimo.
+    private void AplicarRetenciones(Remision remision, RemisionGuardarDto dto, IEnumerable<RemisionItem> items)
+    {
+        var reglas = ReglasRetenciones.Cargar(configuration);
+        if (dto.ReteFuente || dto.ReteIca || dto.ReteIva)
+        {
+            var baseAntesDeIva = RemisionCalculos
+                .Calcular(items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje)))
+                .SubtotalConDescuento;
+            if (baseAntesDeIva < reglas.BaseMinima)
+                throw new InvalidOperationException(
+                    $"Las retenciones solo aplican cuando el valor antes de IVA es de $ {reglas.BaseMinima.ToString("N0", CulturaCo)} o más.");
+        }
+
+        remision.ReteFuentePorcentaje = dto.ReteFuente ? reglas.ReteFuentePorcentaje : 0;
+        remision.ReteIcaPorMil = dto.ReteIca ? reglas.ReteIcaPorMil : 0;
+        remision.ReteIvaPorcentaje = dto.ReteIva ? reglas.ReteIvaPorcentaje : 0;
+    }
+
     // Valida las líneas y las congela desde el catálogo vigente. Mismo producto repetido se suma.
     private async Task<List<RemisionItem>> ConstruirItemsAsync(RemisionGuardarDto dto, CancellationToken ct)
     {
@@ -503,13 +577,7 @@ public partial class RemisionService(
         // Un mismo producto repetido se suma; si viene con descuentos distintos no hay a cuál línea aplicarlos.
         if (dto.Items.GroupBy(i => i.ProductoId).Any(g => g.Select(i => i.DescuentoPorcentaje).Distinct().Count() > 1))
             throw new InvalidOperationException("Un producto repetido tiene descuentos distintos; deja una sola línea por producto.");
-        // Topes de sensatez (no son tarifas): evitan un 0,5 digitado como 50 o un ‰ digitado como %. Las tarifas las decide el vendedor.
-        if (dto.ReteFuentePorcentaje < 0 || dto.ReteFuentePorcentaje > 35)
-            throw new InvalidOperationException("La ReteFuente debe estar entre 0% y 35%.");
-        if (dto.ReteIcaPorMil < 0 || dto.ReteIcaPorMil > 20)
-            throw new InvalidOperationException("La ReteICA debe estar entre 0 y 20 por mil.");
-        if (dto.ReteIvaPorcentaje < 0 || dto.ReteIvaPorcentaje > 100)
-            throw new InvalidOperationException("La ReteIVA debe estar entre 0% y 100% del IVA.");
+        ValidarNotaDeEnvio(dto.TipoEntrega, dto.Nota);
 
         var cantidades = dto.Items
             .GroupBy(i => i.ProductoId)

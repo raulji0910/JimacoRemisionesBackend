@@ -123,10 +123,10 @@ public class StockTests
         await db.SaveChangesAsync();
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(remision.Id, new RemisionGuardarDto(comprador.Id, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(producto.Id, 6)])));
+            servicio.ActualizarAsync(remision.Id, new RemisionGuardarDto(comprador.Id, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(producto.Id, 6)])));
         Assert.Contains("hay 5 y pides 6", ex.Message);
 
-        var ok = await servicio.ActualizarAsync(remision.Id, new RemisionGuardarDto(comprador.Id, TipoEntrega.EnSitio, 0, 0, 0, null, [new RemisionItemEntradaDto(producto.Id, 5)]));
+        var ok = await servicio.ActualizarAsync(remision.Id, new RemisionGuardarDto(comprador.Id, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(producto.Id, 5)]));
         Assert.NotNull(ok);
     }
 

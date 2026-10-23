@@ -16,6 +16,9 @@ public interface IRemisionService
     Task<PagarResultadoDto?> MarcarPagadaAsync(int id, MarcarPagadaDto dto, string? usuario, CancellationToken ct = default);
 
     Task<EnviarCorreoResultadoDto?> EnviarCorreoAsync(int id, CancellationToken ct = default);
+
+    // Copia a compras de una remisión pagada de envío posterior (se usa cuando pasa a envío después de cobrada).
+    Task<bool> EnviarCopiaComprasAsync(int id, CancellationToken ct = default);
     Task<RemisionDetalleDto?> CambiarTipoEntregaAsync(int id, CambiarTipoEntregaDto dto, CancellationToken ct = default);
     Task<RemisionDetalleDto?> MarcarEntregadaAsync(int id, CancellationToken ct = default);
 

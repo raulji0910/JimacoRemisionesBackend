@@ -7,9 +7,10 @@ public record RemisionItemEntradaDto(int ProductoId, int Cantidad, decimal Descu
 public record RemisionGuardarDto(
     int CompradorId,
     TipoEntrega TipoEntrega,
-    decimal ReteFuentePorcentaje,
-    decimal ReteIcaPorMil,
-    decimal ReteIvaPorcentaje,
+    // Las retenciones se activan o no; sus tarifas son fijas (ver ReglasRetenciones) y solo proceden desde un valor mínimo antes de IVA.
+    bool ReteFuente,
+    bool ReteIca,
+    bool ReteIva,
     string? Nota,
     IReadOnlyList<RemisionItemEntradaDto> Items);
 
@@ -17,7 +18,8 @@ public record MarcarPagadaDto(MedioPago MedioPago, string? ReciboRedeban);
 
 public record AnularRemisionDto(string Motivo);
 
-public record CambiarTipoEntregaDto(TipoEntrega TipoEntrega);
+// Al pasar a envío posterior se exige la dirección y ciudad de entrega (Nota), igual que al crear la remisión.
+public record CambiarTipoEntregaDto(TipoEntrega TipoEntrega, string? Nota = null);
 
 public record RemisionItemDto(
     int Id,
@@ -52,7 +54,8 @@ public record RemisionResumenDto(
     MedioPago? MedioPago,
     TipoEntrega TipoEntrega,
     EstadoEntrega EstadoEntrega,
-    bool CorreoEnviado);
+    bool CorreoEnviado,
+    string? CreadoPor);
 
 public record RemisionDetalleDto(
     int Id,
