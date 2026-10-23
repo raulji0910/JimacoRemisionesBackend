@@ -34,7 +34,10 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
         "de la devolución. No se realizan devoluciones de dinero en efectivo. Estos plazos no limitan los derechos legales del consumidor " +
         "cuando sean aplicables.";
 
-    private static readonly byte[] LogoBytes = CargarLogo();
+    private static readonly byte[] LogoBytes = CargarLogo("logo-jimaco.png");
+
+    // Sello de certificación de calidad (SGS ISO 9001) que va arriba al centro del encabezado.
+    private static readonly byte[] LogoCalidadBytes = CargarLogo("logo-calidad.png");
 
     private readonly DatosEmpresaOptions empresa = datosEmpresaOptions.Value;
 
@@ -86,7 +89,11 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
                     });
                 });
 
-                row.RelativeItem();
+                // Sello de calidad: arriba y al centro, entre el logo de la empresa y la insignia de la remisión.
+                row.RelativeItem().AlignCenter().Column(centro =>
+                {
+                    centro.Item().AlignCenter().Width(78).Image(LogoCalidadBytes).FitWidth();
+                });
 
                 row.ConstantItem(150).Column(badge =>
                 {
@@ -333,10 +340,10 @@ public class RemisionPdfBuilder(IOptions<DatosEmpresaOptions> datosEmpresaOption
         return $"{signo}$ {Math.Abs(valor).ToString("N0", CulturaMoneda)}";
     }
 
-    private static byte[] CargarLogo()
+    private static byte[] CargarLogo(string archivo)
     {
         var assembly = typeof(RemisionPdfBuilder).Assembly;
-        var nombreRecurso = assembly.GetManifestResourceNames().First(n => n.EndsWith("logo-jimaco.png", StringComparison.Ordinal));
+        var nombreRecurso = assembly.GetManifestResourceNames().First(n => n.EndsWith(archivo, StringComparison.Ordinal));
         using var stream = assembly.GetManifestResourceStream(nombreRecurso)!;
         using var memoria = new MemoryStream();
         stream.CopyTo(memoria);
