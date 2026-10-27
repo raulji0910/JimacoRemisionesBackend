@@ -130,7 +130,7 @@ public partial class RemisionService(
             Items = items
         };
 
-        AplicarRetenciones(remision, dto, items);
+        AplicarRetenciones(remision, dto, items, comprador);
         db.Remisiones.Add(remision);
         await db.SaveChangesAsync(ct);
 
@@ -157,7 +157,7 @@ public partial class RemisionService(
         remision.CompradorCiudadSnapshot = comprador.Ciudad;
         remision.CompradorTelefonoSnapshot = comprador.Telefono;
         remision.CompradorEmailSnapshot = comprador.Email;
-        AplicarRetenciones(remision, dto, items);
+        AplicarRetenciones(remision, dto, items, comprador);
         remision.Nota = dto.Nota?.Trim();
         remision.TipoEntrega = dto.TipoEntrega;
 
@@ -553,23 +553,27 @@ public partial class RemisionService(
             throw new InvalidOperationException("Para un envío posterior debes escribir en las notas la dirección y la ciudad de entrega.");
     }
 
-    // Las retenciones usan tarifas FIJAS (no se digitan) y solo proceden si el valor antes de IVA (ya con descuentos) llega al mínimo.
-    private void AplicarRetenciones(Remision remision, RemisionGuardarDto dto, IEnumerable<RemisionItem> items)
+    // Solo se maneja ReteFuente (ReteICA y ReteIVA no se aplican: se ignoran aunque lleguen activadas). Tarifa FIJA (no se digita),
+    // solo a persona jurídica (NIT) y solo si el valor antes de IVA (ya con descuentos) llega al mínimo.
+    private void AplicarRetenciones(Remision remision, RemisionGuardarDto dto, IEnumerable<RemisionItem> items, Comprador comprador)
     {
         var reglas = ReglasRetenciones.Cargar(configuration);
-        if (dto.ReteFuente || dto.ReteIca || dto.ReteIva)
+        if (dto.ReteFuente)
         {
+            if (!string.Equals(comprador.TipoDocumento, "NIT", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("La retención en la fuente solo aplica a personas jurídicas (NIT).");
+
             var baseAntesDeIva = RemisionCalculos
                 .Calcular(items.Select(i => (i.PrecioUnitario, i.Cantidad, i.Iva, i.DescuentoPorcentaje)))
                 .SubtotalConDescuento;
             if (baseAntesDeIva < reglas.BaseMinima)
                 throw new InvalidOperationException(
-                    $"Las retenciones solo aplican cuando el valor antes de IVA es de $ {reglas.BaseMinima.ToString("N0", CulturaCo)} o más.");
+                    $"La retención solo aplica cuando el valor antes de IVA es de $ {reglas.BaseMinima.ToString("N0", CulturaCo)} o más.");
         }
 
         remision.ReteFuentePorcentaje = dto.ReteFuente ? reglas.ReteFuentePorcentaje : 0;
-        remision.ReteIcaPorMil = dto.ReteIca ? reglas.ReteIcaPorMil : 0;
-        remision.ReteIvaPorcentaje = dto.ReteIva ? reglas.ReteIvaPorcentaje : 0;
+        remision.ReteIcaPorMil = 0;
+        remision.ReteIvaPorcentaje = 0;
     }
 
     // Valida las líneas y las congela desde el catálogo vigente. Mismo producto repetido se suma.

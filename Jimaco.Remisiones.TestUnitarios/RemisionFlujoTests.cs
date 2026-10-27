@@ -151,11 +151,11 @@ public class RemisionFlujoTests
             servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, false, false, false, null, [new RemisionItemEntradaDto(1, 1)])));
     }
 
-    private static async Task SembrarCompradorAsync(AppDbContext db)
+    private static async Task SembrarCompradorAsync(AppDbContext db, string tipoDocumento = "CC")
     {
         db.Compradores.Add(new Comprador
         {
-            Id = 1, TipoDocumento = "CC", NumeroDocumento = "1", PrimerNombre = "A", NombreCompleto = "A", Email = "a@a.com", FechaCreacion = DateTime.UtcNow
+            Id = 1, TipoDocumento = tipoDocumento, NumeroDocumento = "1", PrimerNombre = "A", NombreCompleto = "A", Email = "a@a.com", FechaCreacion = DateTime.UtcNow
         });
         await db.SaveChangesAsync();
     }
@@ -193,36 +193,47 @@ public class RemisionFlujoTests
     }
 
     [Fact]
-    public async Task Las_retenciones_usan_tarifas_fijas_y_se_restan_al_total()
+    public async Task Solo_se_aplica_retefuente_con_tarifa_fija_y_se_ignoran_reteica_y_reteiva()
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
-        await SembrarCompradorAsync(db);
+        await SembrarCompradorAsync(db, "NIT");
 
-        // 600 x 1.000 al 19%: base 600.000 (supera el mínimo de 523.740), IVA 114.000, bruto 714.000.
+        // 600 x 1.000 al 19%: base 600.000 (supera el mínimo de 523.740), IVA 114.000, bruto 714.000. ICA e IVA llegan activados y se ignoran.
         var r = await servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, true, true, true, null, [new RemisionItemEntradaDto(1, 600)]));
 
-        Assert.Equal((2.5m, 6.9m, 15m), (r!.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje));
+        Assert.Equal((2.5m, 0m, 0m), (r!.ReteFuentePorcentaje, r.ReteIcaPorMil, r.ReteIvaPorcentaje));
         Assert.Equal(714000m, r.TotalBruto);
         Assert.Equal(15000m, r.ReteFuente);      // 2,5% de 600.000
-        Assert.Equal(4140m, r.ReteIca);          // 6,9 por mil de 600.000
-        Assert.Equal(17100m, r.ReteIva);         // 15% del IVA (114.000)
-        Assert.Equal(714000m - 15000m - 4140m - 17100m, r.TotalGeneral);
+        Assert.Equal(0m, r.ReteIca + r.ReteIva);
+        Assert.Equal(714000m - 15000m, r.TotalGeneral);
     }
 
     [Theory]
-    [InlineData(true, false, false)]
-    [InlineData(false, true, false)]
-    [InlineData(false, false, true)]
-    public async Task Las_retenciones_se_rechazan_bajo_el_minimo_de_10_uvt(bool fuente, bool ica, bool iva)
+    [InlineData("CC")]
+    [InlineData("CE")]
+    [InlineData("PAS")]
+    public async Task La_retefuente_solo_aplica_a_persona_juridica(string tipoDocumento)
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
-        await SembrarCompradorAsync(db);
+        await SembrarCompradorAsync(db, tipoDocumento);
 
-        // 523 x 1.000 = 523.000 < 523.740 (10 UVT de 2026): no procede ninguna retención.
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, fuente, ica, iva, null, [new RemisionItemEntradaDto(1, 523)])));
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, true, false, false, null, [new RemisionItemEntradaDto(1, 600)])));
+        Assert.Contains("personas jurídicas", ex.Message);
+    }
+
+    [Fact]
+    public async Task La_retefuente_se_rechaza_bajo_el_minimo_de_10_uvt()
+    {
+        var (servicio, db, _) = Crear();
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
+        await SembrarCompradorAsync(db, "NIT");
+
+        // 523 x 1.000 = 523.000 < 523.740 (10 UVT de 2026): no procede la retención.
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            servicio.ActualizarAsync(id, new RemisionGuardarDto(1, TipoEntrega.EnSitio, true, false, false, null, [new RemisionItemEntradaDto(1, 523)])));
         Assert.Contains("523.740", ex.Message);
     }
 
@@ -231,7 +242,7 @@ public class RemisionFlujoTests
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pendiente, stock: 1000);
-        await SembrarCompradorAsync(db);
+        await SembrarCompradorAsync(db, "NIT");
 
         // 600.000 con 15% de descuento = 510.000 < 523.740: aunque el bruto lo supera, ya no procede.
         await Assert.ThrowsAsync<InvalidOperationException>(() =>

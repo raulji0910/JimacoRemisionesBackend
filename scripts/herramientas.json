@@ -118,5 +118,13 @@
     "precioVenta": 73500,
     "iva": 19,
     "stockInicial": 250
+  },
+  {
+    "codigo": "PJ-28032",
+    "nombre": "Ponchadora inalámbrica para 1260 MCM EB630",
+    "unidadMedida": "Unidad",
+    "precioVenta": 8000000,
+    "iva": 19,
+    "stockInicial": 18
   }
 ]
