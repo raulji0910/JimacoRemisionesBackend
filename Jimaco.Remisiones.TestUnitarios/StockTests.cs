@@ -93,7 +93,7 @@ public class StockTests
     {
         var (db, servicio, remisionId, productoId) = await Escenario(stock: 10, cantidad: 4);
 
-        await servicio.AnularAsync(remisionId, new AnularRemisionDto("Se arrepintió"), esAdmin: false);
+        await servicio.AnularAsync(remisionId, new AnularRemisionDto("Se arrepintió"), esAdmin: true);
 
         Assert.Equal(10, (await db.Productos.FindAsync(productoId))!.Stock);
         Assert.Empty(db.MovimientosInventario);

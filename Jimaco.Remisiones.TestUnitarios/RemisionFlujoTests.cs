@@ -132,12 +132,14 @@ public class RemisionFlujoTests
     }
 
     [Fact]
-    public async Task Anular_pendiente_no_exige_admin()
+    public async Task Anular_pendiente_tambien_exige_admin()
     {
         var (servicio, db, _) = Crear();
         var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio);
 
-        var anulada = await servicio.AnularAsync(id, new AnularRemisionDto("Cliente se arrepintió"), esAdmin: false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.AnularAsync(id, new AnularRemisionDto("Cliente se arrepintió"), esAdmin: false));
+
+        var anulada = await servicio.AnularAsync(id, new AnularRemisionDto("Cliente se arrepintió"), esAdmin: true);
         Assert.Equal(EstadoPago.Anulada, anulada!.EstadoPago);
     }
 

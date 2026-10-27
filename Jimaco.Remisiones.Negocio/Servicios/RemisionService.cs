@@ -324,8 +324,8 @@ public partial class RemisionService(
             throw new InvalidOperationException("El motivo de anulación es obligatorio.");
         if (remision.EstadoPago == EstadoPago.Anulada)
             throw new InvalidOperationException("La remisión ya está anulada.");
-        if (remision.EstadoPago == EstadoPago.Pagada && !esAdmin)
-            throw new InvalidOperationException("Solo un administrador puede anular una remisión ya pagada.");
+        if (!esAdmin)
+            throw new InvalidOperationException("Solo un administrador puede anular una remisión.");
         var ahora = timeProvider.GetUtcNow().UtcDateTime;
 
         // Una remisión ya pagada había sacado stock: se devuelve al anularla.

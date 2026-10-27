@@ -68,6 +68,7 @@ public class RemisionesController(IRemisionService remisionService) : Controller
         => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.MarcarEntregadaAsync(id, ct)));
 
     [HttpPost("{id:int}/anular")]
+    [Authorize(Roles = "Admin")]
     public Task<ActionResult<RemisionDetalleDto>> Anular(int id, AnularRemisionDto dto, CancellationToken ct)
         => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.AnularAsync(id, dto, User.IsInRole("Admin"), NombreUsuario, ct)));
 
