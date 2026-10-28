@@ -59,6 +59,13 @@ public class RemisionesController(IRemisionService remisionService) : Controller
     public Task<ActionResult<EnviarCorreoResultadoDto>> EnviarCorreo(int id, CancellationToken ct)
         => Ejecutar<EnviarCorreoResultadoDto>(async () => Respuesta(await remisionService.EnviarCorreoAsync(id, ct)));
 
+    // Reenvía la remisión pagada SOLO al correo de compras (con el valor unitario ya descontado).
+    [HttpPost("{id:int}/enviar-compras")]
+    public async Task<IActionResult> EnviarCompras(int id, CancellationToken ct)
+        => await remisionService.EnviarCopiaComprasAsync(id, ct)
+            ? Ok(new { enviado = true })
+            : Conflict(new { mensaje = "No se pudo enviar: la remisión debe estar pagada y el correo de compras configurado." });
+
     [HttpPut("{id:int}/entrega")]
     public Task<ActionResult<RemisionDetalleDto>> CambiarTipoEntrega(int id, CambiarTipoEntregaDto dto, CancellationToken ct)
         => Ejecutar<RemisionDetalleDto>(async () => Respuesta(await remisionService.CambiarTipoEntregaAsync(id, dto, ct)));

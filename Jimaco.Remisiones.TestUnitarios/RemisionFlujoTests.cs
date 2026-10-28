@@ -132,6 +132,28 @@ public class RemisionFlujoTests
     }
 
     [Fact]
+    public async Task La_copia_a_compras_muestra_el_valor_unitario_ya_descontado_sin_columna_de_descuento()
+    {
+        var (servicio, db, email) = Crear(config: new() { ["Correo:Compras"] = "compras@x.co" });
+        var id = await SembrarRemisionAsync(db, TipoEntrega.EnSitio, EstadoPago.Pagada, stock: 10);
+        var item = await db.RemisionItems.SingleAsync();
+        item.PrecioUnitario = 152000; item.Cantidad = 3; item.Iva = 19; item.DescuentoPorcentaje = 30;
+        await db.SaveChangesAsync();
+
+        string? cuerpo = null;
+        email.Setup(e => e.EnviarAsync("compras@x.co", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyList<AdjuntoCorreo>?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, string, IReadOnlyList<AdjuntoCorreo>?, CancellationToken>((_, _, c, _, _) => cuerpo = c)
+            .Returns(Task.CompletedTask);
+
+        Assert.True(await servicio.EnviarCopiaComprasAsync(id));
+
+        Assert.Contains("106.400", cuerpo);      // 152.000 - 30 % por unidad
+        Assert.DoesNotContain("152.000", cuerpo);
+        Assert.DoesNotContain("Desc.", cuerpo);
+        Assert.Contains("319.200", cuerpo);      // valor total de la línea (3 x 106.400)
+    }
+
+    [Fact]
     public async Task Anular_pendiente_tambien_exige_admin()
     {
         var (servicio, db, _) = Crear();

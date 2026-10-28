@@ -228,12 +228,12 @@ public partial class RemisionService(
     {
         var remision = await db.Remisiones.Include(r => r.Items).FirstOrDefaultAsync(r => r.Id == id, ct);
         var compras = configuration?["Correo:Compras"]?.Trim();
-        if (remision is null || remision.EstadoPago != EstadoPago.Pagada || remision.TipoEntrega != TipoEntrega.Envio || string.IsNullOrWhiteSpace(compras))
+        if (remision is null || remision.EstadoPago != EstadoPago.Pagada || string.IsNullOrWhiteSpace(compras))
             return false;
 
         try
         {
-            var detalle = MapDetalle(remision);
+            var detalle = ConValorUnitarioDescontado(MapDetalle(remision));
             var adjunto = new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdfBuilder.Generar(detalle), "application/pdf");
             await emailSender.EnviarAsync(compras, AsuntoCompras(detalle),
                 ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), [adjunto], ct);
@@ -375,10 +375,15 @@ public partial class RemisionService(
                 : emailSender.EnviarAsync(contabilidad, $"[Contabilidad] {asunto} - {detalle.CompradorNombre}",
                     ConstruirCuerpoCorreo(detalle, DestinoCorreo.Contabilidad), adjuntos, ct);
             // Compras (Yazmin) recibe solo las remisiones de envío posterior, con la dirección de entrega destacada.
+            // La copia de compras muestra el valor unitario ya con el descuento aplicado (cliente y contabilidad no cambian).
+            var detalleCompras = ConValorUnitarioDescontado(detalle);
+            var adjuntosCompras = detalle.Descuento > 0
+                ? new[] { new AdjuntoCorreo($"{detalle.ConsecutivoFormateado}.pdf", pdfBuilder.Generar(detalleCompras), "application/pdf") }
+                : adjuntos;
             var tareaCompras = string.IsNullOrWhiteSpace(compras)
                 ? Task.CompletedTask
-                : emailSender.EnviarAsync(compras, AsuntoCompras(detalle),
-                    ConstruirCuerpoCorreo(detalle, DestinoCorreo.Compras), adjuntos, ct);
+                : emailSender.EnviarAsync(compras, AsuntoCompras(detalleCompras),
+                    ConstruirCuerpoCorreo(detalleCompras, DestinoCorreo.Compras), adjuntosCompras, ct);
 
             var errorCliente = await EsperarAsync(tareaCliente);
             var errorContabilidad = await EsperarAsync(tareaContabilidad);
@@ -445,6 +450,23 @@ public partial class RemisionService(
         : $"[Compras] Remisión {d.ConsecutivoFormateado} - {d.CompradorNombre}";
 
     private enum DestinoCorreo { Cliente, Contabilidad, Compras }
+
+    // Para compras: cada línea muestra el valor unitario ya descontado y no hay columna ni línea de descuento. El IVA, las
+    // retenciones y el total no cambian (el descuento ya estaba restado antes de calcularlos).
+    internal static RemisionDetalleDto ConValorUnitarioDescontado(RemisionDetalleDto r)
+    {
+        if (r.Descuento <= 0)
+            return r;
+
+        var items = r.Items.Select(i => i with
+        {
+            PrecioUnitario = i.Cantidad > 0 ? i.SubtotalNeto / i.Cantidad : i.PrecioUnitario,
+            Subtotal = i.SubtotalNeto,
+            DescuentoPorcentaje = 0,
+            Descuento = 0
+        }).ToList();
+        return r with { Items = items, SubtotalItems = r.SubtotalConDescuento, Descuento = 0 };
+    }
 
     private static string ConstruirCuerpoCorreo(RemisionDetalleDto r, DestinoCorreo destino)
     {

@@ -126,5 +126,69 @@
     "precioVenta": 8000000,
     "iva": 19,
     "stockInicial": 18
+  },
+  {
+    "codigo": "PJ-12559",
+    "nombre": "Equipo para medición de aislamiento (Megger) 5 kV UNI-T UT513C",
+    "unidadMedida": "Unidad",
+    "precioVenta": 2190500,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-23943",
+    "nombre": "Equipo para medición de aislamiento (Megger) 5 kV UNI-T UT513B",
+    "unidadMedida": "Unidad",
+    "precioVenta": 1716000,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-18656",
+    "nombre": "Multímetro solar profesional 1700 VDC True RMS UNI-T UT196",
+    "unidadMedida": "Unidad",
+    "precioVenta": 517400,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-20518",
+    "nombre": "Pinza digital AC/DC fotovoltaica de alto voltaje UNI-T UT219PV",
+    "unidadMedida": "Unidad",
+    "precioVenta": 1001000,
+    "iva": 19,
+    "stockInicial": 5
+  },
+  {
+    "codigo": "PJ-26155",
+    "nombre": "Multímetro solar profesional IP67 True RMS UNI-T UT197PV",
+    "unidadMedida": "Unidad",
+    "precioVenta": 955500,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-26180",
+    "nombre": "Medidor de distancia láser 100 m con pantalla LCD LM100A",
+    "unidadMedida": "Unidad",
+    "precioVenta": 143000,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-11918",
+    "nombre": "Detector de voltaje AC con interruptor de volt alto/bajo UNI-T UT12D-ROW",
+    "unidadMedida": "Unidad",
+    "precioVenta": 22750,
+    "iva": 19,
+    "stockInicial": 2
+  },
+  {
+    "codigo": "PJ-27421",
+    "nombre": "Set de puntas de medición para telurómetros UT521-UT522-UT572 (UT-L35)",
+    "unidadMedida": "Unidad",
+    "precioVenta": 182000,
+    "iva": 19,
+    "stockInicial": 1
   }
 ]
